@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  hived:
+    image: hived
+    build:
+      context: ./
+    secrets:
+      - tg_bot_token
+    networks:
+      - hivednet
+    restart: unless-stopped
+    ports:
+      - "8008:8008"
+networks:
+  hivednet:
+secrets:
+  tg_bot_token:
+    file: ./tgtoken.json
