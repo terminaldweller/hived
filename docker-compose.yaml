@@ -6,6 +6,7 @@ services:
       context: ./
     secrets:
       - tg_bot_token
+      - ch_api_key
     networks:
       - hivednet
     restart: unless-stopped
@@ -16,3 +17,5 @@ networks:
 secrets:
   tg_bot_token:
     file: ./tgtoken.json
+  ch_api_key:
+    file: ./changelly_api_key.json
