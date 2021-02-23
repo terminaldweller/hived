@@ -1,4 +1,4 @@
-version: "3.8"
+version: "3.4"
 services:
   hived:
     image: hived
@@ -12,6 +12,19 @@ services:
     restart: unless-stopped
     ports:
       - "8008:8008"
+    depends_on:
+      - redis
+  redis:
+    image: redis:6.2-alpine
+    networks:
+      - hivednet
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    volumes:
+      - redis-data:/data/
 networks:
   hivednet:
 secrets:
@@ -19,3 +32,5 @@ secrets:
     file: ./tgtoken.json
   ch_api_key:
     file: ./changelly_api_key.json
+volumes:
+  redis-data:
