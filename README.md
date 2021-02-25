@@ -47,3 +47,7 @@ Both the server itself and the redis image are alpine-based so they're pretty sm
 
 ## Docs
 You can find the swagger and postman docs under `/api`.<br/>
+
+## TODO
+* fix travis
+* add unit tests
