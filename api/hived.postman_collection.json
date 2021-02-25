@@ -1,0 +1,64 @@
+{
+	"info": {
+		"_postman_id": "ca2c71c1-27a5-466c-a3c7-16b71f62af34",
+		"name": "hived",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "price",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": ""
+			},
+			"response": []
+		},
+		{
+			"name": "pair",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8008/pair?one=ETH&two=CAKE&multiplier=4.0",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"pair"
+					],
+					"query": [
+						{
+							"key": "one",
+							"value": "ETH"
+						},
+						{
+							"key": "two",
+							"value": "CAKE"
+						},
+						{
+							"key": "multiplier",
+							"value": "4.0"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "addalert",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": ""
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}

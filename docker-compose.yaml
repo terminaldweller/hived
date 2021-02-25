@@ -7,6 +7,7 @@ services:
     secrets:
       - tg_bot_token
       - ch_api_key
+      - ch_api_secret
     networks:
       - hivednet
     restart: unless-stopped
@@ -14,6 +15,7 @@ services:
       - "8008:8008"
     depends_on:
       - redis
+    entrypoint: /hived/docker-entrypoint.sh
   redis:
     image: redis:6.2-alpine
     networks:
@@ -27,10 +29,15 @@ services:
       - redis-data:/data/
 networks:
   hivednet:
+    driver: bridge
+  routenet:
+    driver: bridge
 secrets:
   tg_bot_token:
-    file: ./tgtoken.json
+    file: ./tgtoken
   ch_api_key:
-    file: ./changelly_api_key.json
+    file: ./changelly_api_key
+  ch_api_secret:
+    file: ./changelly_api_secret
 volumes:
   redis-data:

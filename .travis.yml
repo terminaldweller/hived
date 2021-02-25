@@ -1,0 +1,14 @@
+language: go
+
+env:
+  - DOCKER_COMPOSE_VERSION=1.25.0
+
+services:
+  - docker
+
+before_install:
+  - docker pull redis:6.2-alpine
+
+install:
+  - docker build -t hived ./ && docker-compose up -d
+  - ./test/endpoints.sh

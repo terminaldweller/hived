@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -16,79 +21,43 @@ import (
 	"github.com/Knetic/govaluate"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var flagPort = flag.String("port", "8008", "determined the port the sercice runs on")
-var flagTgTokenFile = flag.String("tgtoken", "/run/secrets/tg_bot_token", "determines the location of the telegram bot token file")
-var changelllyAPIKeyFile = flag.String("chapikey", "/run/secrets/ch_api_key", "determines the file that holds the changelly api key")
+
 var alertFile = flag.String("alertfile", "/run/secrets/alerts", "determines the locaiton of the alert files")
 var alertsCheckInterval = flag.Int64("alertinterval", 600., "in seconds, the amount of time between alert checks")
 var redisAddress = flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
 var redisPassword = flag.String("redispassword", "", "determines the password of the redis db")
 var redisDB = flag.Int64("redisdb", 0, "determines the db number")
+var botChannelID = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
 
 const cryptocomparePriceURL = "https://min-api.cryptocompare.com/data/price?"
 const changellyURL = "https://api.changelly.com"
-const botChannelID = 146328407
+const TELEGRAM_BOT_TOKEN_ENV_VAR = "TELEGRAM_BOT_TOKEN"
+const CHANGELLY_API_KEY_ENV_VAR = "CHANGELLY_API_KEY"
+const CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
 
 var getRedisClientOnce sync.Once
 var getTGBotOnce sync.Once
 
-type TgToken struct {
-	Token string `json:"token"`
-}
-
-func getTGToken() string {
-	tgTokenJsonBytes, err := ioutil.ReadFile(*flagTgTokenFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var tgToken TgToken
-
-	err = json.Unmarshal(tgTokenJsonBytes, &tgToken)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return tgToken.Token
-}
-
-func getTgBot() *tgbotapi.BotAPI {
-	var tgbot *tgbotapi.BotAPI
-	getTGBotOnce.Do(func() {
-		tgTokenJsonBytes, err := ioutil.ReadFile(*flagTgTokenFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		var tgToken TgToken
-
-		err = json.Unmarshal(tgTokenJsonBytes, &tgToken)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		bot, err := tgbotapi.NewBotAPI(tgToken.Token)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		bot.Debug = true
-		tgbot = bot
-	})
-	return tgbot
-}
-
 func runTgBot() {
-	bot := getTgBot()
-	log.Printf("Authorized on account %s", bot.Self.UserName)
+	// bot := getTgBot()
+	token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
+	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
+	if err != nil {
+		log.Error().Err(err)
+	}
+	log.Debug().Msg("authorized on account bot_bloodstalker")
 
 	update := tgbotapi.NewUpdate(0)
 	update.Timeout = 60
 
 	updates, err := bot.GetUpdatesChan(update)
 	if err != nil {
-		log.Panic(err)
+		log.Error().Err(err)
 	}
 
 	for update := range updates {
@@ -159,7 +128,7 @@ func sendGetToCryptoCompare(
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
-func cryptoHandler(w http.ResponseWriter, r *http.Request) {
+func priceHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
@@ -174,8 +143,16 @@ func cryptoHandler(w http.ResponseWriter, r *http.Request) {
 		case "unit":
 			unit = value[0]
 		default:
-			log.Fatal("bad parameters for the crypto endpoint.")
+			log.Error().Err(errors.New("bad parameters for the crypto endpoint."))
 		}
+	}
+
+	if name == "" || unit == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"err":          "query parameters must include name and unit",
+			"isSuccessful": false})
+		log.Error().Err(errors.New("query parameters must include name and unit."))
+		return
 	}
 
 	var wg sync.WaitGroup
@@ -190,10 +167,10 @@ func cryptoHandler(w http.ResponseWriter, r *http.Request) {
 	select {
 	case err := <-errChan:
 		if err.hasError != false {
-			log.Printf(err.err.Error())
+			log.Error().Err(err.err)
 		}
 	default:
-		log.Fatal("this shouldnt have happened")
+		log.Error().Err(errors.New("this shouldn't have happened'"))
 	}
 
 	var price priceChanStruct
@@ -201,10 +178,15 @@ func cryptoHandler(w http.ResponseWriter, r *http.Request) {
 	case priceCh := <-priceChan:
 		price = priceCh
 	default:
-		log.Fatal("this shouldnt have happened")
+		log.Fatal().Err(errors.New("this shouldnt have happened"))
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{"name": price.name, "price": price.price, "unit": unit})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":         price.name,
+		"price":        price.price,
+		"unit":         unit,
+		"err":          "",
+		"isSuccessful": true})
 }
 
 func pairHandler(w http.ResponseWriter, r *http.Request) {
@@ -226,13 +208,16 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 		case "multiplier":
 			multiplier, err = strconv.ParseFloat(value[0], 64)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err)
 			}
 		default:
-			log.Fatal("bad parameters for the pair endpoint.")
+			log.Fatal().Err(errors.New("unknown parameters for the pair endpoint."))
 		}
 	}
-	fmt.Println(one, two, multiplier)
+
+	if one == "" || two == "" || multiplier == 0. {
+		log.Error().Err(errors.New("the query must include one()),two and multiplier"))
+	}
 
 	var wg sync.WaitGroup
 	priceChan := make(chan priceChanStruct, 2)
@@ -249,10 +234,10 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 		select {
 		case err := <-errChan:
 			if err.hasError != false {
-				log.Printf(err.err.Error())
+				log.Error().Err(err.err)
 			}
 		default:
-			log.Fatal("this shouldnt have happened")
+			log.Fatal().Err(errors.New("this shouldnt have happened"))
 		}
 	}
 
@@ -268,7 +253,7 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 				priceTwo = price.price
 			}
 		default:
-			log.Fatal("this shouldnt have happened")
+			log.Fatal().Err(errors.New("this shouldnt have happened"))
 		}
 	}
 
@@ -286,6 +271,7 @@ type alertsType struct {
 	Alerts []alertType `json:"alerts"`
 }
 
+//FIXME
 func getRedisClient() *redis.Client {
 	var client *redis.Client
 	getRedisClientOnce.Do(func() {
@@ -325,6 +311,7 @@ func getAlerts() (alertsType, error) {
 	return alerts, nil
 }
 
+//not being used
 func getAlertsFromRedis() (alertsType, error) {
 	// rdb := getRedisClient()
 	rdb := redis.NewClient(&redis.Options{
@@ -335,10 +322,15 @@ func getAlertsFromRedis() (alertsType, error) {
 	ctx := context.Background()
 	val, err := rdb.Get(ctx, "alert").Result()
 	if err != nil {
-		log.Printf(err.Error())
+		log.Error().Err(err)
 		return alertsType{}, err
 	}
 	fmt.Println(val)
+
+	err = rdb.Close()
+	if err != nil {
+		log.Error().Err(err)
+	}
 
 	return alertsType{}, nil
 }
@@ -347,7 +339,7 @@ func alertManager() {
 	for {
 		alerts, err := getAlerts()
 		if err != nil {
-			log.Printf(err.Error())
+			log.Error().Err(err)
 			return
 		}
 		fmt.Println(alerts)
@@ -355,7 +347,7 @@ func alertManager() {
 		for i := range alerts.Alerts {
 			expression, err := govaluate.NewEvaluableExpression(alerts.Alerts[i].Expr)
 			if err != nil {
-				log.Printf(err.Error())
+				log.Error().Err(err)
 				continue
 			}
 
@@ -381,7 +373,7 @@ func alertManager() {
 						log.Printf(err.err.Error())
 					}
 				default:
-					log.Fatal("this shouldnt have happened")
+					log.Error().Err(errors.New("this shouldnt have happened"))
 				}
 			}
 
@@ -390,27 +382,28 @@ func alertManager() {
 				case price := <-priceChan:
 					parameters[price.name] = price.price
 				default:
-					log.Fatal("this shouldnt have happened")
+					log.Error().Err(errors.New("this shouldnt have happened"))
 				}
 			}
 
 			fmt.Println("parameters:", parameters)
 			result, err := expression.Evaluate(parameters)
 			if err != nil {
-				log.Println(err.Error())
+				log.Error().Err(err)
 			}
 
 			var resultBool bool
 			fmt.Println("result:", result)
 			resultBool = result.(bool)
 			if resultBool == true {
-				bot, err := tgbotapi.NewBotAPI(getTGToken())
-				if err != nil {
-					log.Panic(err)
-				}
 				// bot := getTgBot()
+				token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
+				bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
+				if err != nil {
+					log.Error().Err(err)
+				}
 				msgText := "notification " + alerts.Alerts[i].Expr + " has been triggered"
-				msg := tgbotapi.NewMessage(botChannelID, msgText)
+				msg := tgbotapi.NewMessage(*botChannelID, msgText)
 				bot.Send(msg)
 			}
 		}
@@ -438,32 +431,114 @@ func addAlertHandler(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(bodyBytes, &bodyJSON)
 	fmt.Println(bodyJSON)
 
+	if bodyJSON.Name == "" || bodyJSON.Expr == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"isSuccessful": false,
+			"error":        "not all parameters are valid."})
+		log.Fatal().Err(errors.New("not all parameters are valid."))
+		return
+	}
+
 	// rdb := getRedisClient()
 	rdb := redis.NewClient(&redis.Options{
-		Addr:         *redisAddress,
-		Password:     *redisPassword,
-		DB:           int(*redisDB),
-		MinIdleConns: 1,
+		Addr:     *redisAddress,
+		Password: *redisPassword,
+		DB:       int(*redisDB),
 	})
 	ctx := context.Background()
 	key := "alert:" + bodyJSON.Name
 	rdb.Set(ctx, bodyJSON.Name, bodyJSON.Expr, 0)
 	rdb.SAdd(ctx, "alertkeys", key)
-	json.NewEncoder(w).Encode(map[string]interface{}{"isSuccessful": true, "error": ""})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"isSuccessful": true,
+		"error":        ""})
+
+	err = rdb.Close()
+	if err != nil {
+		log.Error().Err(err)
+	}
+}
+
+func exHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method is not supported.", http.StatusNotFound)
+	}
+
+	apiKey := os.Getenv(CHANGELLY_API_KEY_ENV_VAR)
+	apiSecret := os.Getenv(CHANGELLY_API_SECRET_ENV_VAR)
+
+	body := struct {
+		Jsonrpc string   `json:"jsonrpc"`
+		Id      string   `json:"id"`
+		Method  string   `json:"method"`
+		Params  []string `json:"params"`
+	}{
+		Jsonrpc: "2.0",
+		Id:      "test",
+		Method:  "getCurrencies",
+		Params:  nil}
+
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		log.Error().Err(err)
+	}
+
+	secretBytes := []byte(apiSecret[1 : len(apiSecret)-1])
+	mac := hmac.New(sha512.New, secretBytes)
+	mac.Write(bodyJSON)
+
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", changellyURL, bytes.NewReader(bodyJSON))
+	if err != nil {
+		log.Error().Err(err)
+	}
+
+	macDigest := hex.EncodeToString(mac.Sum(nil))
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("api-key", apiKey[1:len(apiKey)-1])
+	req.Header.Add("sign", macDigest)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err)
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	log.Printf(string(responseBody))
+
+	responseUnmarshalled := struct {
+		Jsonrpc string   `json:"jsonrpc"`
+		Id      string   `json:"id"`
+		Result  []string `json:"result"`
+	}{}
+
+	err = json.Unmarshal(responseBody, &responseUnmarshalled)
+	if err != nil {
+		log.Error().Err(err)
+	}
+
+	json.NewEncoder(w).Encode(responseUnmarshalled)
 }
 
 func startServer() {
 	http.HandleFunc("/health", healthHandler)
-	http.HandleFunc("/crypto", cryptoHandler)
+	http.HandleFunc("/price", priceHandler)
 	http.HandleFunc("/pair", pairHandler)
 	http.HandleFunc("/addalert", addAlertHandler)
+	http.HandleFunc("/ex", exHandler)
 
 	if err := http.ListenAndServe(":"+*flagPort, nil); err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 }
 
+func setupLogging() {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+}
+
 func main() {
+	setupLogging()
 	go runTgBot()
 	go alertManager()
 	startServer()
