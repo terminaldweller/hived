@@ -1,4 +1,4 @@
-# language: go
+language: go
 env:
   matrix:
   - DOCKER_COMPOSE_VERSION=1.25.0
