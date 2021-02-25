@@ -1,0 +1,32 @@
+version: "3.4"
+services:
+  hived:
+    image: hived
+    build:
+      context: ./
+    networks:
+      - hivednet
+    restart: unless-stopped
+    ports:
+      - "8008:8008"
+    depends_on:
+      - redis
+    entrypoint: /hived/docker-entrypoint.sh
+  redis:
+    image: redis:6.2-alpine
+    networks:
+      - hivednet
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    volumes:
+      - redis-data:/data/
+networks:
+  hivednet:
+    driver: bridge
+  routenet:
+    driver: bridge
+volumes:
+  redis-data:
