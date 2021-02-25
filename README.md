@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/terminaldweller/hived.svg?branch=main)](https://travis-ci.org/terminaldweller/hived)
+
 # hived
 `hived` is the second version of my personal cryptocurrency server.<br/>
 hived is currently using redis as its DB because its tiny and fast.<br/>
