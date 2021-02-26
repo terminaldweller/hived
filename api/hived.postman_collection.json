@@ -1,8 +1,8 @@
 {
 	"info": {
-		"_postman_id": "ca2c71c1-27a5-466c-a3c7-16b71f62af34",
+		"_postman_id": "75c431f8-b05d-4706-a6a8-e7ba5b36b2fe",
 		"name": "hived",
-		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
 		{
@@ -10,7 +10,30 @@
 			"request": {
 				"method": "GET",
 				"header": [],
-				"url": ""
+				"url": {
+					"raw": "http://127.0.0.1:8008/price?name=CAKE&unit=USD",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"price"
+					],
+					"query": [
+						{
+							"key": "name",
+							"value": "CAKE"
+						},
+						{
+							"key": "unit",
+							"value": "USD"
+						}
+					]
+				}
 			},
 			"response": []
 		},
@@ -53,18 +76,54 @@
 		{
 			"name": "alert-post",
 			"request": {
-				"method": "GET",
+				"method": "POST",
 				"header": [],
-				"url": ""
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"name\":\"alert4\",\r\n    \"expr\":\"ETH>CAKE\"\r\n}"
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8008/alert",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"alert"
+					]
+				}
 			},
 			"response": []
 		},
 		{
 			"name": "alert-delete",
 			"request": {
-				"method": "GET",
+				"method": "DELETE",
 				"header": [],
-				"url": ""
+				"url": {
+					"raw": "http://127.0.0.1:8008/alert?id=alert4",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"alert"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": "alert4"
+						}
+					]
+				}
 			},
 			"response": []
 		},
@@ -73,7 +132,20 @@
 			"request": {
 				"method": "GET",
 				"header": [],
-				"url": ""
+				"url": {
+					"raw": "http://127.0.0.1:8008/ex",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"ex"
+					]
+				}
 			},
 			"response": []
 		},
@@ -82,7 +154,20 @@
 			"request": {
 				"method": "GET",
 				"header": [],
-				"url": null
+				"url": {
+					"raw": "http://127.0.0.1:8008/health",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"health"
+					]
+				}
 			},
 			"response": []
 		}
