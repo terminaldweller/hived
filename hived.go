@@ -27,7 +27,6 @@ import (
 
 var flagPort = flag.String("port", "8008", "determined the port the sercice runs on")
 
-var alertFile = flag.String("alertfile", "/run/secrets/alerts", "determines the locaiton of the alert files")
 var alertsCheckInterval = flag.Int64("alertinterval", 600., "in seconds, the amount of time between alert checks")
 var redisAddress = flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
 var redisPassword = flag.String("redispassword", "", "determines the password of the redis db")
@@ -455,7 +454,7 @@ func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 	for key, value := range params {
 		switch key {
-		case "Id":
+		case "id":
 			Id = value[0]
 		default:
 			log.Error().Err(errors.New("bad parameters for the crypto endpoint."))

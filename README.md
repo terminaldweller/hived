@@ -5,7 +5,7 @@
 * hived is currently using redis as its DB because its tiny and fast.<br/>
 * It sends notifications through telegram.<br/>
 
-Currently it has 4 endpoint:<br/>
+Currently it has 5 endpoint:<br/>
 
 ### /price
 Lets you ask for the price of the currency. You can determine the currency the value is returned in.<br/>
@@ -31,6 +31,9 @@ Gets the list of currencies that are available to be traded.<br/>
 
 You can check under `./test` for some examples of curl commands.<br/>
 
+### /health
+Returns the health status of the service.<br/>
+
 ## How to Run
 Before you can run this, you need a [telegram bot token](https://core.telegram.org/bots#6-botfather) and a [changelly](https://changelly.com/) API key.<br/>
 The keys are put in files and then given to Docker as secrets.The docker entrypoint script then exports these as environment variables.<br/>
@@ -53,7 +56,7 @@ Both the server itself and the redis image are alpine-based so they're pretty sm
 You can find the swagger and postman docs under `/api`.<br/>
 
 ## TODO
-* fix travis
+* ~~fix travis~~
 * add unit tests
 * fix `hived -help` crashing
 * haproxy-ssl-termination
