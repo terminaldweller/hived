@@ -51,14 +51,40 @@
 			"response": []
 		},
 		{
-			"name": "addalert",
+			"name": "alert-post",
 			"request": {
 				"method": "GET",
 				"header": [],
 				"url": ""
 			},
 			"response": []
+		},
+		{
+			"name": "alert-delete",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": ""
+			},
+			"response": []
+		},
+		{
+			"name": "ex",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": ""
+			},
+			"response": []
+		},
+		{
+			"name": "health",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": null
+			},
+			"response": []
 		}
-	],
-	"protocolProfileBehavior": {}
+	]
 }

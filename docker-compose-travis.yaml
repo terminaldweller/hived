@@ -11,7 +11,7 @@ services:
       - "8008:8008"
     depends_on:
       - redis
-    entrypoint: /hived/docker-entrypoint.sh
+    entrypoint: /hived/hived
   redis:
     image: redis:6.2-alpine
     networks:

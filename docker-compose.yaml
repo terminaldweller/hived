@@ -30,8 +30,6 @@ services:
 networks:
   hivednet:
     driver: bridge
-  routenet:
-    driver: bridge
 secrets:
   tg_bot_token:
     file: ./tgtoken

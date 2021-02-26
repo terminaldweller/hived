@@ -1,9 +1,10 @@
 [![Build Status](https://travis-ci.org/terminaldweller/hived.svg?branch=main)](https://travis-ci.org/terminaldweller/hived)
 
 # hived
-`hived` is the second version of my personal cryptocurrency server.<br/>
-hived is currently using redis as its DB because its tiny and fast.<br/>
-It sends notifications through telegram.<br/>
+`hived` is the second version of my personal cryptocurrency server:<br/>
+* hived is currently using redis as its DB because its tiny and fast.<br/>
+* It sends notifications through telegram.<br/>
+
 Currently it has 4 endpoint:<br/>
 
 ### /price
@@ -12,7 +13,8 @@ Lets you ask for the price of the currency. You can determine the currency the v
 ### /pair
 Takes in a pair of currencies and a multiplier. Determines and returns the ratio.<br/>
 
-### /addalert
+### /alert
+#### POST
 Takes in a name and a math expression containing the names of the currencies. Checks the expression periodically. Sends a message over telegram when the expression holds true.<br/>
 The expression's result must be boolean. As an example:<br/>
 ```Go
@@ -21,6 +23,8 @@ ETH*60/(DOGE*300000) < 4.
 ```
 You can have as many parameters as you like. The requests for the crypto prices are all turned into individual goroutines so it's fast.<br/>
 The expression evaluation is powered by [govaluate](https://github.com/Knetic/govaluate). So for a set of rules and what you can and cannot do please check the documentation over there.<br/>
+#### DELETE
+Deletes the key from the DB so you will no longer receive updates.<br/>
 
 ### /ex
 Gets the list of currencies that are available to be traded.<br/>
@@ -51,3 +55,5 @@ You can find the swagger and postman docs under `/api`.<br/>
 ## TODO
 * fix travis
 * add unit tests
+* fix `hived -help` crashing
+* haproxy-ssl-termination

@@ -70,7 +70,7 @@ paths:
                 properties:
                   ratio:
                     type: number
-  /addalerts:
+  /alerts:
     post:
       description: Add alerts to the alertmanager's list
       requestBody:
@@ -99,3 +99,57 @@ paths:
                     type: string
                   isSuccessful:
                     type: boolean
+    delete:
+      description: Remove an alert from alertmanager's list
+      parameters:
+        - name : id
+          in: query
+          description: the name of the alert that should be deleted
+          schema:
+            type: string
+      responses:
+        '200':
+          description: successful delete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  err:
+                    type: string
+                  isSuccessful:
+                    type: string
+  /ex:
+    get:
+      description: Returns the list of currencies that are available for trade
+      responses:
+        '200':
+          description: seccussful update
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  err:
+                    type: string
+                  isSuccessful:
+                    type: boolean
+                  tradaeble:
+                    type: array
+                    items:
+                      type: string
+  /health:
+    get:
+      description: Returns the health status of hived
+      responses:
+        '200':
+          description: successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isOK:
+                    type: boolean
+                  Err:
+                    type: string

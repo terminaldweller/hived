@@ -124,10 +124,6 @@ func sendGetToCryptoCompare(
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
-//TODO
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-}
-
 func priceHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
@@ -417,11 +413,7 @@ type addAlertJSONType struct {
 	Expr string `json:"expr"`
 }
 
-func addAlertHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method is not supported.", http.StatusNotFound)
-	}
-
+func handleAlertPost(w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Printf(err.Error())
@@ -429,7 +421,6 @@ func addAlertHandler(w http.ResponseWriter, r *http.Request) {
 
 	var bodyJSON addAlertJSONType
 	json.Unmarshal(bodyBytes, &bodyJSON)
-	fmt.Println(bodyJSON)
 
 	if bodyJSON.Name == "" || bodyJSON.Expr == "" {
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -457,6 +448,54 @@ func addAlertHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error().Err(err)
 	}
+}
+
+func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
+	var Id string
+	params := r.URL.Query()
+	for key, value := range params {
+		switch key {
+		case "Id":
+			Id = value[0]
+		default:
+			log.Error().Err(errors.New("bad parameters for the crypto endpoint."))
+		}
+	}
+
+	if Id == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"isSuccessful": false,
+			"error":        "Id parameter is not valid."})
+		log.Fatal().Err(errors.New("not all parameters are valid."))
+		return
+	}
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     *redisAddress,
+		Password: *redisPassword,
+		DB:       int(*redisDB),
+	})
+	ctx := context.Background()
+
+	rdb.Del(ctx, Id)
+	setKey := "alert:" + Id
+	rdb.SRem(ctx, "alertkeys", setKey)
+
+	json.NewEncoder(w).Encode(struct {
+		IsSuccessful bool   `json:"isSuccessful"`
+		Err          string `json:"err"`
+	}{IsSuccessful: true, Err: ""})
+}
+
+func alertHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		handleAlertPost(w, r)
+	} else if r.Method == "DELETE" {
+		handleAlertDelete(w, r)
+	} else {
+		http.Error(w, "Method is not supported.", http.StatusNotFound)
+	}
+
 }
 
 func exHandler(w http.ResponseWriter, r *http.Request) {
@@ -521,11 +560,22 @@ func exHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(responseUnmarshalled)
 }
 
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method is not supported.", http.StatusNotFound)
+	}
+
+	json.NewEncoder(w).Encode(struct {
+		IsOK bool   `json:"isOK"`
+		Err  string `json:"err"`
+	}{IsOK: true, Err: ""})
+}
+
 func startServer() {
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/price", priceHandler)
 	http.HandleFunc("/pair", pairHandler)
-	http.HandleFunc("/addalert", addAlertHandler)
+	http.HandleFunc("/alert", alertHandler)
 	http.HandleFunc("/ex", exHandler)
 
 	if err := http.ListenAndServe(":"+*flagPort, nil); err != nil {
@@ -539,7 +589,7 @@ func setupLogging() {
 
 func main() {
 	setupLogging()
-	go runTgBot()
+	// go runTgBot()
 	go alertManager()
 	startServer()
 }

@@ -1,4 +1,6 @@
 language: go
+go:
+  - 1.15
 env:
   matrix:
   - DOCKER_COMPOSE_VERSION=1.25.0
@@ -11,5 +13,6 @@ services:
 before_install:
 - docker pull redis:6.2-alpine
 install:
-- docker build -t hived ./ && docker-compose -f ./docker-compose-travis.yaml up -d
+# - docker build -t hived ./ && docker-compose -f ./docker-compose-travis.yaml up -d
 # - "./test/endpoints.sh"
+  - go build
