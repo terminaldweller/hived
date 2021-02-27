@@ -52,6 +52,9 @@ CHANGELLY_API_SECRET:"my-changelly-api-secret"
 If you want to use docker-compose, it's as  simple as running `docker-compose up`. You just need to provide the files. You can check the file names in the docker-compose file.<br/>
 Both the server itself and the redis image are alpine-based so they're pretty small.<br/>
 
+## Gitpod
+`hived` is gitpod-ready. Gitpod might need to install some go lsp tools once it is loaded. You will get prompted for those.<br/>
+
 ## Docs
 You can find the swagger and postman docs under `/api`.<br/>
 
