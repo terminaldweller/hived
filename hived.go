@@ -39,8 +39,7 @@ const TELEGRAM_BOT_TOKEN_ENV_VAR = "TELEGRAM_BOT_TOKEN"
 const CHANGELLY_API_KEY_ENV_VAR = "CHANGELLY_API_KEY"
 const CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
 
-var getRedisClientOnce sync.Once
-var getTGBotOnce sync.Once
+var rdb *redis.Client
 
 func runTgBot() {
 	// bot := getTgBot()
@@ -266,29 +265,8 @@ type alertsType struct {
 	Alerts []alertType `json:"alerts"`
 }
 
-//FIXME
-func getRedisClient() *redis.Client {
-	var client *redis.Client
-	getRedisClientOnce.Do(func() {
-		rdb := redis.NewClient(&redis.Options{
-			Addr:     *redisAddress,
-			Password: *redisPassword,
-			DB:       int(*redisDB),
-		})
-		client = rdb
-	})
-
-	return client
-}
-
 func getAlerts() (alertsType, error) {
 	var alerts alertsType
-	// rdb := getRedisClient()
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     *redisAddress,
-		Password: *redisPassword,
-		DB:       int(*redisDB),
-	})
 	ctx := context.Background()
 	keys := rdb.SMembersMap(ctx, "alertkeys")
 	alerts.Alerts = make([]alertType, len(keys.Val()))
@@ -304,30 +282,6 @@ func getAlerts() (alertsType, error) {
 	}
 
 	return alerts, nil
-}
-
-//not being used
-func getAlertsFromRedis() (alertsType, error) {
-	// rdb := getRedisClient()
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     *redisAddress,
-		Password: *redisPassword,
-		DB:       int(*redisDB),
-	})
-	ctx := context.Background()
-	val, err := rdb.Get(ctx, "alert").Result()
-	if err != nil {
-		log.Error().Err(err)
-		return alertsType{}, err
-	}
-	fmt.Println(val)
-
-	err = rdb.Close()
-	if err != nil {
-		log.Error().Err(err)
-	}
-
-	return alertsType{}, nil
 }
 
 func alertManager() {
@@ -429,12 +383,6 @@ func handleAlertPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// rdb := getRedisClient()
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     *redisAddress,
-		Password: *redisPassword,
-		DB:       int(*redisDB),
-	})
 	ctx := context.Background()
 	key := "alert:" + bodyJSON.Name
 	rdb.Set(ctx, bodyJSON.Name, bodyJSON.Expr, 0)
@@ -443,10 +391,6 @@ func handleAlertPost(w http.ResponseWriter, r *http.Request) {
 		"isSuccessful": true,
 		"error":        ""})
 
-	err = rdb.Close()
-	if err != nil {
-		log.Error().Err(err)
-	}
 }
 
 func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
@@ -469,16 +413,12 @@ func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     *redisAddress,
-		Password: *redisPassword,
-		DB:       int(*redisDB),
-	})
 	ctx := context.Background()
 
 	rdb.Del(ctx, Id)
 	setKey := "alert:" + Id
 	rdb.SRem(ctx, "alertkeys", setKey)
+	log.Printf(setKey)
 
 	json.NewEncoder(w).Encode(struct {
 		IsSuccessful bool   `json:"isSuccessful"`
@@ -587,6 +527,13 @@ func setupLogging() {
 }
 
 func main() {
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     *redisAddress,
+		Password: *redisPassword,
+		DB:       int(*redisDB),
+	})
+	defer rdb.Close()
+
 	setupLogging()
 	// go runTgBot()
 	go alertManager()
