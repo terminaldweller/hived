@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/terminaldweller/hived.svg?branch=main)](https://travis-ci.org/terminaldweller/hived)
+[![Go Report Card](https://goreportcard.com/badge/github.com/terminaldweller/hived)](https://goreportcard.com/report/github.com/terminaldweller/hived)
 
 # hived
 `hived` is the second version of my personal cryptocurrency server:<br/>
