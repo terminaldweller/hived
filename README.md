@@ -62,5 +62,6 @@ You can find the swagger and postman docs under `/api`.<br/>
 ## TODO
 * ~~fix travis~~
 * add unit tests
-* fix `hived -help` crashing
-* haproxy-ssl-termination
+* ~~fix `hived -help` crashing~~
+* haproxy
+* turn the telegram bot into its own microservice

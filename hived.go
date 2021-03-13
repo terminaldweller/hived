@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/Knetic/govaluate"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -92,12 +94,11 @@ func sendGetToCryptoCompare(
 	params := "fsym=" + url.QueryEscape(name) + "&" +
 		"tsyms=" + url.QueryEscape(unit)
 	path := cryptocomparePriceURL + params
-	fmt.Println(path)
 	resp, err := http.Get(path)
 	if err != nil {
 		priceChan <- priceChanStruct{name: name, price: 0.}
 		errChan <- errorChanStruct{hasError: true, err: err}
-		fmt.Println(err.Error())
+		log.Error().Err(err)
 	}
 	defer resp.Body.Close()
 
@@ -105,7 +106,7 @@ func sendGetToCryptoCompare(
 	if err != nil {
 		priceChan <- priceChanStruct{name: name, price: 0.}
 		errChan <- errorChanStruct{hasError: true, err: err}
-		fmt.Println(err.Error())
+		log.Error().Err(err)
 	}
 
 	jsonBody := make(map[string]float64)
@@ -113,16 +114,17 @@ func sendGetToCryptoCompare(
 	if err != nil {
 		priceChan <- priceChanStruct{name: name, price: 0.}
 		errChan <- errorChanStruct{hasError: true, err: err}
-		fmt.Println(err.Error())
+		log.Error().Err(err)
 	}
 
-	fmt.Println(string(body))
+	log.Info().Msg(string(body))
 
 	priceChan <- priceChanStruct{name: name, price: jsonBody[unit]}
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
 func priceHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
@@ -185,6 +187,7 @@ func priceHandler(w http.ResponseWriter, r *http.Request) {
 
 func pairHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
+	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
@@ -252,7 +255,7 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ratio := priceOne * multiplier / priceTwo
-	fmt.Println(ratio)
+	log.Info().Msg(fmt.Sprintf("%v", ratio))
 	json.NewEncoder(w).Encode(map[string]interface{}{"ratio": ratio})
 }
 
@@ -291,7 +294,7 @@ func alertManager() {
 			log.Error().Err(err)
 			return
 		}
-		fmt.Println(alerts)
+		log.Info().Msg(fmt.Sprintf("%v", alerts))
 
 		for i := range alerts.Alerts {
 			expression, err := govaluate.NewEvaluableExpression(alerts.Alerts[i].Expr)
@@ -335,14 +338,14 @@ func alertManager() {
 				}
 			}
 
-			fmt.Println("parameters:", parameters)
+			log.Info().Msg(fmt.Sprintf("parameters: %v", parameters))
 			result, err := expression.Evaluate(parameters)
 			if err != nil {
 				log.Error().Err(err)
 			}
 
 			var resultBool bool
-			fmt.Println("result:", result)
+			log.Info().Msg(fmt.Sprintf("result: %v", result))
 			resultBool = result.(bool)
 			if resultBool == true {
 				// bot := getTgBot()
@@ -367,6 +370,7 @@ type addAlertJSONType struct {
 }
 
 func handleAlertPost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
 	bodyBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Printf(err.Error())
@@ -395,10 +399,11 @@ func handleAlertPost(w http.ResponseWriter, r *http.Request) {
 
 func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
 	var Id string
+	w.Header().Add("Content-Type", "application/json")
 	params := r.URL.Query()
 	for key, value := range params {
 		switch key {
-		case "id":
+		case "key":
 			Id = value[0]
 		default:
 			log.Error().Err(errors.New("bad parameters for the crypto endpoint."))
@@ -426,11 +431,59 @@ func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
 	}{IsSuccessful: true, Err: ""})
 }
 
+func handleAlertGet(w http.ResponseWriter, r *http.Request) {
+	var Id string
+	w.Header().Add("Content-Type", "application/json")
+	params := r.URL.Query()
+	for key, value := range params {
+		switch key {
+		case "key":
+			Id = value[0]
+		default:
+			log.Error().Err(errors.New("bad parameters for the crypto endpoint."))
+		}
+	}
+
+	if Id == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"isSuccessful": false,
+			"error":        "Id parameter is not valid."})
+		log.Fatal().Err(errors.New("not all parameters are valid."))
+		return
+	}
+
+	ctx := context.Background()
+
+	redisResult := rdb.Get(ctx, Id)
+	redisResultString, err := redisResult.Result()
+	if err != nil {
+		log.Err(err)
+	}
+
+	var ErrorString string
+	if err == nil {
+		ErrorString = ""
+	} else {
+		ErrorString = err.Error()
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+
+	json.NewEncoder(w).Encode(struct {
+		IsSuccessful bool   `json:"isSuccessful"`
+		Error        string `json:"error"`
+		Key          string `json:"key"`
+		Expr         string `json:"expr"`
+	}{IsSuccessful: true, Error: ErrorString, Key: Id, Expr: redisResultString})
+}
+
 func alertHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
+	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
 		handleAlertPost(w, r)
 	} else if r.Method == "DELETE" {
 		handleAlertDelete(w, r)
+	} else if r.Method == "GET" {
+		handleAlertGet(w, r)
 	} else {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
@@ -438,6 +491,7 @@ func alertHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func exHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
@@ -500,26 +554,71 @@ func exHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
+	var RedisError string
+	var HivedError string
+	IsHivedOk := true
+	var IsRedisOk bool
+
+	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
 
+	pingCtx := context.Background()
+	pingResponse := rdb.Ping(pingCtx)
+	pingResponseResult, err := pingResponse.Result()
+	if err != nil {
+		log.Err(err)
+		IsRedisOk = false
+		RedisError = err.Error()
+	} else {
+		if pingResponseResult == "PONG" {
+			IsRedisOk = true
+			RedisError = ""
+		} else {
+			IsRedisOk = false
+			RedisError = "redis did not respond PONG to ping"
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+
 	json.NewEncoder(w).Encode(struct {
-		IsOK bool   `json:"isOK"`
-		Err  string `json:"err"`
-	}{IsOK: true, Err: ""})
+		IsHivedOk  bool   `json:"isHivedOk"`
+		HivedError string `json:"hivedError"`
+		IsRedisOk  bool   `json:"isRedisOk"`
+		RedisError string `json:"redisError"`
+	}{IsHivedOk: IsHivedOk, HivedError: HivedError, IsRedisOk: IsRedisOk, RedisError: RedisError})
 }
 
-func startServer() {
-	http.HandleFunc("/health", healthHandler)
-	http.HandleFunc("/price", priceHandler)
-	http.HandleFunc("/pair", pairHandler)
-	http.HandleFunc("/alert", alertHandler)
-	http.HandleFunc("/ex", exHandler)
-
-	if err := http.ListenAndServe(":"+*flagPort, nil); err != nil {
-		log.Fatal().Err(err)
+func startServer(gracefulWait time.Duration) {
+	r := mux.NewRouter()
+	srv := &http.Server{
+		Addr:         "0.0.0.0:" + *flagPort,
+		WriteTimeout: time.Second * 15,
+		ReadTimeout:  time.Second * 15,
+		Handler:      r,
 	}
+	r.HandleFunc("/health", healthHandler)
+	r.HandleFunc("/price", priceHandler)
+	r.HandleFunc("/pair", pairHandler)
+	r.HandleFunc("/alert", alertHandler)
+	r.HandleFunc("/ex", exHandler)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Fatal().Err(err)
+		}
+	}()
+
+	c := make(chan os.Signal, 1)
+
+	signal.Notify(c, os.Interrupt)
+	<-c
+	ctx, cancel := context.WithTimeout(context.Background(), gracefulWait)
+	defer cancel()
+	srv.Shutdown(ctx)
+	log.Info().Msg("gracefully shut down the server")
 }
 
 func setupLogging() {
@@ -527,6 +626,10 @@ func setupLogging() {
 }
 
 func main() {
+	var gracefulWait time.Duration
+	flag.DurationVar(&gracefulWait, "gracefulwait", time.Second*15, "the duration to wait during the graceful shutdown")
+	flag.Parse()
+
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     *redisAddress,
 		Password: *redisPassword,
@@ -537,5 +640,5 @@ func main() {
 	setupLogging()
 	// go runTgBot()
 	go alertManager()
-	startServer()
+	startServer(gracefulWait)
 }
