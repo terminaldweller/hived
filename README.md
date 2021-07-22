@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/terminaldweller/hived.svg?branch=main)](https://travis-ci.org/terminaldweller/hived)
+[![Build Status](https://travis-ci.com/terminaldweller/hived.svg?branch=main)](https://travis-ci.com/terminaldweller/hived)
 [![Go Report Card](https://goreportcard.com/badge/github.com/terminaldweller/hived)](https://goreportcard.com/report/github.com/terminaldweller/hived)
 
 # hived

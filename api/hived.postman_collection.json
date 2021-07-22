@@ -43,7 +43,7 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://127.0.0.1:8008/pair?one=ETH&two=CAKE&multiplier=4.0",
+					"raw": "http://127.0.0.1:8008/pair?one=BNB&two=CAKE&multiplier=41.56",
 					"protocol": "http",
 					"host": [
 						"127",
@@ -58,7 +58,7 @@
 					"query": [
 						{
 							"key": "one",
-							"value": "ETH"
+							"value": "BNB"
 						},
 						{
 							"key": "two",
@@ -66,7 +66,7 @@
 						},
 						{
 							"key": "multiplier",
-							"value": "4.0"
+							"value": "41.56"
 						}
 					]
 				}
@@ -100,12 +100,64 @@
 			"response": []
 		},
 		{
+			"name": "alert-put",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"name\":\"alert4\",\r\n    \"expr\":\"ETH<CAKE\"\r\n}"
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8008/alert",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"alert"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "alert-patch",
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"name\":\"alert4\",\r\n    \"expr\":\"ETH==CAKE\"\r\n}"
+				},
+				"url": {
+					"raw": "http://127.0.0.1:8008/alert",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"alert"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "alert-delete",
 			"request": {
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://127.0.0.1:8008/alert?id=alert4",
+					"raw": "http://127.0.0.1:8008/alert?key=alert4",
 					"protocol": "http",
 					"host": [
 						"127",
@@ -119,7 +171,35 @@
 					],
 					"query": [
 						{
-							"key": "id",
+							"key": "key",
+							"value": "alert4"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "alert-get",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8008/alert?key=alert4",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8008",
+					"path": [
+						"alert"
+					],
+					"query": [
+						{
+							"key": "key",
 							"value": "alert4"
 						}
 					]

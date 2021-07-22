@@ -592,6 +592,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func robotsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "text/plain")
 	json.NewEncoder(w).Encode(struct {
 		UserAgents string `json:"User-Agents"`
 		Disallow   string `json:"Disallow"`
