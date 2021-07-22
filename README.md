@@ -65,3 +65,5 @@ You can find the swagger and postman docs under `/api`.<br/>
 * ~~fix `hived -help` crashing~~
 * haproxy
 * turn the telegram bot into its own microservice
+* update openapi3.0 spec and postman
+* telegram bot's endpoint should be gRPC

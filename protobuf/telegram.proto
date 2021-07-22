@@ -1,0 +1,22 @@
+syntax= "proto3";
+package hived;
+
+import "google/protobuf/timestamp.proto";
+option go_package ="../protobuf";
+
+message NotificationRequest {
+  reserved 4 to 7;
+  string notificationText = 1;
+  int64 channel_id = 2;
+  google.protobuf.Timestamp request_time = 3;
+}
+
+message NotificationResponse {
+  reserved 3 to 6;
+  string error = 2;
+  bool isOK = 1;
+}
+
+service NotificationService {
+  rpc Notify(NotificationRequest) returns (NotificationResponse);
+}

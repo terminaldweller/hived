@@ -21,7 +21,7 @@ import (
 
 	"github.com/Knetic/govaluate"
 	"github.com/go-redis/redis/v8"
-	"github.com/go-telegram-bot-api/telegram-bot-api"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -591,6 +591,13 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}{IsHivedOk: IsHivedOk, HivedError: HivedError, IsRedisOk: IsRedisOk, RedisError: RedisError})
 }
 
+func robotsHandler(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(struct {
+		UserAgents string `json:"User-Agents"`
+		Disallow   string `json:"Disallow"`
+	}{"*", "/"})
+}
+
 func startServer(gracefulWait time.Duration) {
 	r := mux.NewRouter()
 	srv := &http.Server{
@@ -604,6 +611,7 @@ func startServer(gracefulWait time.Duration) {
 	r.HandleFunc("/pair", pairHandler)
 	r.HandleFunc("/alert", alertHandler)
 	r.HandleFunc("/ex", exHandler)
+	r.HandleFunc("/robots.txt", robotsHandler)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
