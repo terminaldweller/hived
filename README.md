@@ -1,3 +1,4 @@
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/3e47399f08e84bba98ac2874def2724f)](https://app.codacy.com/gh/terminaldweller/hived?utm_source=github.com&utm_medium=referral&utm_content=terminaldweller/hived&utm_campaign=Badge_Grade_Settings)
 [![Build Status](https://travis-ci.com/terminaldweller/hived.svg?branch=main)](https://travis-ci.com/terminaldweller/hived)
 [![Go Report Card](https://goreportcard.com/badge/github.com/terminaldweller/hived)](https://goreportcard.com/report/github.com/terminaldweller/hived)
 
