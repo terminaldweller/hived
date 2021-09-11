@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha512"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -601,11 +602,23 @@ func robotsHandler(w http.ResponseWriter, r *http.Request) {
 
 func startServer(gracefulWait time.Duration) {
 	r := mux.NewRouter()
+	cfg := &tls.Config{
+		MinVersion:               tls.VersionTLS13,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}
 	srv := &http.Server{
 		Addr:         "0.0.0.0:" + *flagPort,
 		WriteTimeout: time.Second * 15,
 		ReadTimeout:  time.Second * 15,
 		Handler:      r,
+		TLSConfig:    cfg,
 	}
 	r.HandleFunc("/health", healthHandler)
 	r.HandleFunc("/price", priceHandler)
@@ -615,7 +628,7 @@ func startServer(gracefulWait time.Duration) {
 	r.HandleFunc("/robots.txt", robotsHandler)
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
+		if err := srv.ListenAndServeTLS("/certs/fullchain.pem", "/certs/privkey.pem"); err != nil {
 			log.Fatal().Err(err)
 		}
 	}()
