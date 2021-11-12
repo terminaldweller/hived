@@ -44,6 +44,7 @@ const (
 	TELEGRAM_BOT_TOKEN_ENV_VAR   = "TELEGRAM_BOT_TOKEN"
 	CHANGELLY_API_KEY_ENV_VAR    = "CHANGELLY_API_KEY"
 	CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
+	SERVER_DEPLOYMENT_TYPE       = "SERVER_DEPLOYMENT_TYPE"
 )
 
 func runTgBot() {
@@ -628,7 +629,15 @@ func startServer(gracefulWait time.Duration) {
 	r.HandleFunc("/crypto/robots.txt", robotsHandler)
 
 	go func() {
-		if err := srv.ListenAndServeTLS("/certs/fullchain1.pem", "/certs/privkey1.pem"); err != nil {
+		var certPath, keyPath string
+		if os.Getenv(SERVER_DEPLOYMENT_TYPE) == "deployment" {
+			certPath = "/certs/fullchain1.pem"
+			keyPath = "/certs/privkey1.pem"
+		} else {
+			certPath = "/certs/server.cert"
+			keyPath = "/certs/server.key"
+		}
+		if err := srv.ListenAndServeTLS(certPath, keyPath); err != nil {
 			log.Fatal().Err(err)
 		}
 	}()

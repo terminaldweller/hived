@@ -20,6 +20,8 @@ services:
       - /etc/letsencrypt/archive/api.terminaldweller.com/:/certs/
     cap_drop:
       - ALL
+    environment:
+      - SERVER_DEPLOYMENT_TYPE=deployment
   redis:
     image: redis:6.2-alpine
     networks:
