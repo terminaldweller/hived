@@ -12,14 +12,23 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
+	pb "github.com/terminaldweller/grpc/telebot/v1"
 )
 
-var flagPort = flag.String("port", "8000", "determined the port the sercice runs on")
+var (
+	flagPort = flag.String("port", "8000", "determined the port the sercice runs on")
 
-// FIXME-the client should provide the channel ID
-var botChannelID = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
+	// FIXME-the client should provide the channel ID
+	botChannelID = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
+)
 
-const TELEGRAM_BOT_TOKEN_ENV_VAR = "TELEGRAM_BOT_TOKEN"
+const (
+	TELEGRAM_BOT_TOKEN_ENV_VAR = "TELEGRAM_BOT_TOKEN"
+	SERVER_DEPLOYMENT_TYPE     = "SERVER_DEPLOYMENT_TYPE"
+)
+
+type NotificationService struct {
+}
 
 func getTGBot() *tgbotapi.BotAPI {
 	token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
@@ -30,10 +39,24 @@ func getTGBot() *tgbotapi.BotAPI {
 	return bot
 }
 
-func sendMessage(bot *tgbotapi.BotAPI, msgText string) error {
-	msg := tgbotapi.NewMessage(*botChannelID, msgText)
+func sendMessage(bot *tgbotapi.BotAPI, msgText string, channelID int64) error {
+	msg := tgbotapi.NewMessage(channelID, msgText)
 	bot.Send(msg)
 	return nil
+}
+
+func (s *NotificationService) Notify(ctx context.Context, NotificationRequest *pb.NotificationRequest) (*pb.NotificationResponse, error) {
+	var err error
+	tgbotapi := getTGBot()
+	if NotificationRequest.ChannelId == 0 {
+		err = sendMessage(tgbotapi, NotificationRequest.NotificationText, *botChannelID)
+	} else {
+		err = sendMessage(tgbotapi, NotificationRequest.NotificationText, NotificationRequest.ChannelId)
+	}
+	if err != nil {
+		return &pb.NotificationResponse{Error: err.Error(), IsOK: false}, err
+	}
+	return &pb.NotificationResponse{Error: "", IsOK: true}, nil
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
