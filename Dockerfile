@@ -7,7 +7,7 @@ RUN cd /hived && go mod download
 COPY *.go /hived/
 RUN cd /hived && go build
 
-FROM alpine:3.13
+FROM gcr.io/distroless/static-debian10
 COPY --from=builder /hived/hived /hived/
 COPY ./docker-entrypoint.sh /hived/
 ENTRYPOINT ["/hived/docker-entrypoint.sh"]

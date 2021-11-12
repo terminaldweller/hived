@@ -28,21 +28,23 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var flagPort = flag.String("port", "8008", "determined the port the sercice runs on")
+var (
+	flagPort            = flag.String("port", "8008", "determined the port the sercice runs on")
+	alertsCheckInterval = flag.Int64("alertinterval", 600., "in seconds, the amount of time between alert checks")
+	redisAddress        = flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
+	redisPassword       = flag.String("redispassword", "", "determines the password of the redis db")
+	redisDB             = flag.Int64("redisdb", 0, "determines the db number")
+	botChannelID        = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
+	rdb                 *redis.Client
+)
 
-var alertsCheckInterval = flag.Int64("alertinterval", 600., "in seconds, the amount of time between alert checks")
-var redisAddress = flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
-var redisPassword = flag.String("redispassword", "", "determines the password of the redis db")
-var redisDB = flag.Int64("redisdb", 0, "determines the db number")
-var botChannelID = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
-
-const cryptocomparePriceURL = "https://min-api.cryptocompare.com/data/price?"
-const changellyURL = "https://api.changelly.com"
-const TELEGRAM_BOT_TOKEN_ENV_VAR = "TELEGRAM_BOT_TOKEN"
-const CHANGELLY_API_KEY_ENV_VAR = "CHANGELLY_API_KEY"
-const CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
-
-var rdb *redis.Client
+const (
+	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
+	changellyURL                 = "https://api.changelly.com"
+	TELEGRAM_BOT_TOKEN_ENV_VAR   = "TELEGRAM_BOT_TOKEN"
+	CHANGELLY_API_KEY_ENV_VAR    = "CHANGELLY_API_KEY"
+	CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
+)
 
 func runTgBot() {
 	// bot := getTgBot()
@@ -395,7 +397,6 @@ func handleAlertPost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"isSuccessful": true,
 		"error":        ""})
-
 }
 
 func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
@@ -488,7 +489,6 @@ func alertHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
-
 }
 
 func exHandler(w http.ResponseWriter, r *http.Request) {
@@ -620,12 +620,12 @@ func startServer(gracefulWait time.Duration) {
 		Handler:      r,
 		TLSConfig:    cfg,
 	}
-	r.HandleFunc("/health", healthHandler)
-	r.HandleFunc("/price", priceHandler)
-	r.HandleFunc("/pair", pairHandler)
-	r.HandleFunc("/alert", alertHandler)
-	r.HandleFunc("/ex", exHandler)
-	r.HandleFunc("/robots.txt", robotsHandler)
+	r.HandleFunc("/crypto/health", healthHandler)
+	r.HandleFunc("/crypto/price", priceHandler)
+	r.HandleFunc("/crypto/pair", pairHandler)
+	r.HandleFunc("/crypto/alert", alertHandler)
+	r.HandleFunc("/crypto/ex", exHandler)
+	r.HandleFunc("/crypto/robots.txt", robotsHandler)
 
 	go func() {
 		if err := srv.ListenAndServeTLS("/certs/fullchain1.pem", "/certs/privkey1.pem"); err != nil {
