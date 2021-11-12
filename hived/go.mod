@@ -1,4 +1,4 @@
-module github.com/terminaldweller/hived
+module hived
 
 go 1.17
 
