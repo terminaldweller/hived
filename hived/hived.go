@@ -26,6 +26,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	pb "github.com/terminaldweller/grpc/telebot/v1"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -46,6 +48,26 @@ const (
 	CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
 	SERVER_DEPLOYMENT_TYPE       = "SERVER_DEPLOYMENT_TYPE"
 )
+
+func sendToTg(address string) {
+	conn, err := grpc.Dial(address, grpc.WithInsecure())
+	if err != nil {
+		log.Fatal().Err(err)
+	}
+	defer conn.Close()
+
+	c := pb.NewNotificationServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	r, err := c.Notify(ctx, &pb.NotificationRequest{})
+	if err != nil {
+		log.Fatal().Err(err)
+	}
+
+	log.Info().Msg(fmt.Sprintf("%v", r))
+}
 
 func runTgBot() {
 	// bot := getTgBot()
@@ -633,9 +655,11 @@ func startServer(gracefulWait time.Duration) {
 		if os.Getenv(SERVER_DEPLOYMENT_TYPE) == "deployment" {
 			certPath = "/certs/fullchain1.pem"
 			keyPath = "/certs/privkey1.pem"
-		} else {
+		} else if os.Getenv(SERVER_DEPLOYMENT_TYPE) == "test" {
 			certPath = "/certs/server.cert"
 			keyPath = "/certs/server.key"
+		} else {
+			log.Fatal().Err(errors.New(fmt.Sprintf("unknown deployment kind: %s", SERVER_DEPLOYMENT_TYPE)))
 		}
 		if err := srv.ListenAndServeTLS(certPath, keyPath); err != nil {
 			log.Fatal().Err(err)

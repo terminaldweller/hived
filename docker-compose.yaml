@@ -3,21 +3,38 @@ services:
   hived:
     image: hived
     build:
-      context: ./
+      context: ./hived
     secrets:
-      - tg_bot_token
       - ch_api_key
       - ch_api_secret
     networks:
-      - hivednet
+      - mainnet
+      - telenet
     restart: unless-stopped
     ports:
       - "8008:8008"
     depends_on:
       - redis
-    entrypoint: /hived/docker-entrypoint.sh
+      - telebot
+    entrypoint: ["/hived/docker-entrypoint.sh"]
     volumes:
       - /etc/letsencrypt/archive/api.terminaldweller.com/:/certs/
+    cap_drop:
+      - ALL
+    environment:
+      - SERVER_DEPLOYMENT_TYPE=deployment
+  telebot:
+    image: telebot
+    build:
+      context: ./telebot
+    secrets:
+      - tg_bot_token
+    networks:
+      - telenet
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9009:9009"
+    entrypoint: ["/telebot/docker-entrypoint.sh"]
     cap_drop:
       - ALL
     environment:
@@ -25,7 +42,7 @@ services:
   redis:
     image: redis:6.2-alpine
     networks:
-      - hivednet
+      - mainnet
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
@@ -34,8 +51,10 @@ services:
     volumes:
       - redis-data:/data/
 networks:
-  hivednet:
+  mainnet:
     driver: bridge
+  telenet:
+    driver: brige
 secrets:
   tg_bot_token:
     file: ./tgtoken

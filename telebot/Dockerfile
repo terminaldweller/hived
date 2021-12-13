@@ -7,7 +7,6 @@ COPY *.go /telebot/
 RUN cd /telebot && go build
 
 FROM gcr.io/distroless/static-debian10
-COPY --from=certbuilder /cert/ /cert/
 COPY --from=builder /telebot/telebot /telebot/
 COPY ./docker-entrypoint.sh /telebot/
 ENTRYPOINT ["/telebot/docker-entrypoint.sh"]

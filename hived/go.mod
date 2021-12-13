@@ -9,4 +9,6 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/rs/zerolog v1.20.0
 	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
+	github.com/terminaldweller/grpc v1.0.3
+	google.golang.org/grpc v1.42.0
 )
