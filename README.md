@@ -5,6 +5,7 @@
 `hived` is the second version of my personal cryptocurrency server:<br/>
 * hived is currently using redis as its DB because its tiny and fast.<br/>
 * It sends notifications through telegram.<br/>
+* telebot and hived talk with grpc.<br/>
 
 Currently it has 5 endpoint:<br/>
 
@@ -24,8 +25,15 @@ ETH*60/(DOGE*300000) < 4.
 ```
 You can have as many parameters as you like. The requests for the crypto prices are all turned into individual goroutines so it's fast.<br/>
 The expression evaluation is powered by [govaluate](https://github.com/Knetic/govaluate). So for a set of rules and what you can and cannot do please check the documentation over there.<br/>
+
 #### DELETE
 Deletes the key from the DB so you will no longer receive updates.<br/>
+
+#### PUT
+Updates the alert.<br/.>
+
+#### GET
+Fetch the alert with the given name.<br/>
 
 ### /ex
 Gets the list of currencies that are available to be traded.<br/>
@@ -53,6 +61,10 @@ CHANGELLY_API_SECRET:"my-changelly-api-secret"
 If you want to use docker-compose, it's as  simple as running `docker-compose up`. You just need to provide the files. You can check the file names in the docker-compose file.<br/>
 Both the server itself and the redis image are alpine-based so they're pretty small.<br/>
 
+## telebot
+`telebot` is the service that handles sending notifications through telegram. telebot uses grpc.<br/>
+You can find the grpc repo for it [here](https://github.com/terminaldweller/grpc).<br/>
+
 ## Gitpod
 `hived` is gitpod-ready. Gitpod might need to install some go lsp tools once it is loaded. You will get prompted for those.<br/>
 
@@ -63,7 +75,7 @@ You can find the swagger and postman docs under `/api`.<br/>
 * ~~fix travis~~
 * add unit tests
 * ~~fix `hived -help` crashing~~
-* haproxy
-* turn the telegram bot into its own microservice
+* ~~haproxy~~
+* ~~turn the telegram bot into its own microservice~~
 * update openapi3.0 spec and postman
-* telegram bot's endpoint should be gRPC
+* ~~telegram bot's endpoint should be gRPC~~
