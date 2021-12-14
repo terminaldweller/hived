@@ -60,7 +60,7 @@ func sendToTg(address, msg string, channelId int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	r, err := c.Notify(ctx, &pb.NotificationRequest{NotificationText: address, ChannelId: channelId})
+	r, err := c.Notify(ctx, &pb.NotificationRequest{NotificationText: msg, ChannelId: channelId})
 	if err != nil {
 		log.Fatal().Err(err)
 	}
@@ -385,7 +385,7 @@ func alertManager() {
 				if err != nil {
 					log.Fatal().Err(err)
 				}
-				sendToTg("telebot:9009", msgText, tokenInt)
+				sendToTg("telebot:8000", msgText, tokenInt)
 			}
 		}
 

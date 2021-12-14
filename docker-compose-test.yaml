@@ -30,7 +30,7 @@ services:
     networks:
       - telenet
     ports:
-      - "9009:9009"
+      - "9009:8000"
     entrypoint: ["/telebot/docker-entrypoint.sh"]
     cap_drop:
       - ALL

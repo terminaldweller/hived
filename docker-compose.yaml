@@ -34,7 +34,7 @@ services:
       - telenet
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9009:9009"
+      - "127.0.0.1:9009:8000"
     entrypoint: ["/telebot/docker-entrypoint.sh"]
     cap_drop:
       - ALL
