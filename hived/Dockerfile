@@ -6,13 +6,14 @@ RUN cd /hived && go mod download
 COPY *.go /hived/
 RUN cd /hived && go build
 
-FROM node:lts-alpine3.13 AS certbuilder
+FROM node:lts-alpine3.13 as certbuilder
 RUN apk add openssl
 WORKDIR /certs
 RUN openssl req -nodes -new -x509 -subj="/C=US/ST=Denial/L=springfield/O=Dis/CN=localhost" -keyout server.key -out server.cert
 
-FROM gcr.io/distroless/static-debian10
-COPY --from=certbuilder /cert/ /cert/
+# FROM gcr.io/distroless/static-debian10
+FROM alpine:3.13
+COPY --from=certbuilder /certs /certs
 COPY --from=builder /hived/hived /hived/
 COPY ./docker-entrypoint.sh /hived/
 ENTRYPOINT ["/hived/docker-entrypoint.sh"]

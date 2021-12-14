@@ -22,7 +22,6 @@ import (
 
 	"github.com/Knetic/govaluate"
 	"github.com/go-redis/redis/v8"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -49,7 +48,7 @@ const (
 	SERVER_DEPLOYMENT_TYPE       = "SERVER_DEPLOYMENT_TYPE"
 )
 
-func sendToTg(address string) {
+func sendToTg(address, msg string, channelId int64) {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		log.Fatal().Err(err)
@@ -61,7 +60,7 @@ func sendToTg(address string) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	r, err := c.Notify(ctx, &pb.NotificationRequest{})
+	r, err := c.Notify(ctx, &pb.NotificationRequest{NotificationText: address, ChannelId: channelId})
 	if err != nil {
 		log.Fatal().Err(err)
 	}
@@ -69,36 +68,36 @@ func sendToTg(address string) {
 	log.Info().Msg(fmt.Sprintf("%v", r))
 }
 
-func runTgBot() {
-	// bot := getTgBot()
-	token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
-	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
-	if err != nil {
-		log.Error().Err(err)
-	}
-	log.Debug().Msg("authorized on account bot_bloodstalker")
+// func runTgBot() {
+// 	// bot := getTgBot()
+// 	token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
+// 	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
+// 	if err != nil {
+// 		log.Error().Err(err)
+// 	}
+// 	log.Debug().Msg("authorized on account bot_bloodstalker")
 
-	update := tgbotapi.NewUpdate(0)
-	update.Timeout = 60
+// 	update := tgbotapi.NewUpdate(0)
+// 	update.Timeout = 60
 
-	updates, err := bot.GetUpdatesChan(update)
-	if err != nil {
-		log.Error().Err(err)
-	}
+// 	updates, err := bot.GetUpdatesChan(update)
+// 	if err != nil {
+// 		log.Error().Err(err)
+// 	}
 
-	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
+// 	for update := range updates {
+// 		if update.Message == nil {
+// 			continue
+// 		}
 
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+// 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-		msg.ReplyToMessageID = update.Message.MessageID
+// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
+// 		msg.ReplyToMessageID = update.Message.MessageID
 
-		bot.Send(msg)
-	}
-}
+// 		bot.Send(msg)
+// 	}
+// }
 
 type priceChanStruct struct {
 	name  string
@@ -374,15 +373,19 @@ func alertManager() {
 			log.Info().Msg(fmt.Sprintf("result: %v", result))
 			resultBool = result.(bool)
 			if resultBool == true {
-				// bot := getTgBot()
 				token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
-				bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
-				if err != nil {
-					log.Error().Err(err)
-				}
+				// bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
+				// if err != nil {
+				// 	log.Error().Err(err)
+				// }
 				msgText := "notification " + alerts.Alerts[i].Expr + " has been triggered"
-				msg := tgbotapi.NewMessage(*botChannelID, msgText)
-				bot.Send(msg)
+				// msg := tgbotapi.NewMessage(*botChannelID, msgText)
+				// bot.Send(msg)
+				tokenInt, err := strconv.ParseInt(token[1:len(token)-1], 10, 64)
+				if err != nil {
+					log.Fatal().Err(err)
+				}
+				sendToTg("telebot:9009", msgText, tokenInt)
 			}
 		}
 
