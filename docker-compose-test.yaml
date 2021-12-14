@@ -11,19 +11,16 @@ services:
     networks:
       - mainnet
       - telenet
-    restart: unless-stopped
     ports:
       - "8008:8008"
     depends_on:
       - redis
       - telebot
     entrypoint: ["/hived/docker-entrypoint.sh"]
-    volumes:
-      - /etc/letsencrypt/archive/api.terminaldweller.com/:/certs/
     cap_drop:
       - ALL
     environment:
-      - SERVER_DEPLOYMENT_TYPE=deployment
+      - SERVER_DEPLOYMENT_TYPE=test
   telebot:
     image: telebot
     build:
@@ -32,21 +29,19 @@ services:
       - tg_bot_token
     networks:
       - telenet
-    restart: unless-stopped
     ports:
-      - "127.0.0.1:9009:8000"
+      - "9009:8000"
     entrypoint: ["/telebot/docker-entrypoint.sh"]
     cap_drop:
       - ALL
     environment:
-      - SERVER_DEPLOYMENT_TYPE=deployment
+      - SERVER_DEPLOYMENT_TYPE=test
   redis:
     image: redis:6.2-alpine
     networks:
       - mainnet
-    restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"
+      - "6379:6379"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     volumes:

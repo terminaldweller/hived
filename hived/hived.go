@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha512"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,58 +22,82 @@ import (
 
 	"github.com/Knetic/govaluate"
 	"github.com/go-redis/redis/v8"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	pb "github.com/terminaldweller/grpc/telebot/v1"
+	"google.golang.org/grpc"
 )
 
-var flagPort = flag.String("port", "8008", "determined the port the sercice runs on")
+var (
+	flagPort            = flag.String("port", "8008", "determined the port the sercice runs on")
+	alertsCheckInterval = flag.Int64("alertinterval", 600., "in seconds, the amount of time between alert checks")
+	redisAddress        = flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
+	redisPassword       = flag.String("redispassword", "", "determines the password of the redis db")
+	redisDB             = flag.Int64("redisdb", 0, "determines the db number")
+	botChannelID        = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
+	rdb                 *redis.Client
+)
 
-var alertsCheckInterval = flag.Int64("alertinterval", 600., "in seconds, the amount of time between alert checks")
-var redisAddress = flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
-var redisPassword = flag.String("redispassword", "", "determines the password of the redis db")
-var redisDB = flag.Int64("redisdb", 0, "determines the db number")
-var botChannelID = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
+const (
+	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
+	changellyURL                 = "https://api.changelly.com"
+	TELEGRAM_BOT_TOKEN_ENV_VAR   = "TELEGRAM_BOT_TOKEN"
+	CHANGELLY_API_KEY_ENV_VAR    = "CHANGELLY_API_KEY"
+	CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
+	SERVER_DEPLOYMENT_TYPE       = "SERVER_DEPLOYMENT_TYPE"
+)
 
-const cryptocomparePriceURL = "https://min-api.cryptocompare.com/data/price?"
-const changellyURL = "https://api.changelly.com"
-const TELEGRAM_BOT_TOKEN_ENV_VAR = "TELEGRAM_BOT_TOKEN"
-const CHANGELLY_API_KEY_ENV_VAR = "CHANGELLY_API_KEY"
-const CHANGELLY_API_SECRET_ENV_VAR = "CHANGELLY_API_SECRET"
-
-var rdb *redis.Client
-
-func runTgBot() {
-	// bot := getTgBot()
-	token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
-	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
+func sendToTg(address, msg string, channelId int64) {
+	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
-		log.Error().Err(err)
+		log.Fatal().Err(err)
 	}
-	log.Debug().Msg("authorized on account bot_bloodstalker")
+	defer conn.Close()
 
-	update := tgbotapi.NewUpdate(0)
-	update.Timeout = 60
+	c := pb.NewNotificationServiceClient(conn)
 
-	updates, err := bot.GetUpdatesChan(update)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	r, err := c.Notify(ctx, &pb.NotificationRequest{NotificationText: msg, ChannelId: channelId})
 	if err != nil {
-		log.Error().Err(err)
+		log.Fatal().Err(err)
 	}
 
-	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-		msg.ReplyToMessageID = update.Message.MessageID
-
-		bot.Send(msg)
-	}
+	log.Info().Msg(fmt.Sprintf("%v", r))
 }
+
+// func runTgBot() {
+// 	// bot := getTgBot()
+// 	token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
+// 	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
+// 	if err != nil {
+// 		log.Error().Err(err)
+// 	}
+// 	log.Debug().Msg("authorized on account bot_bloodstalker")
+
+// 	update := tgbotapi.NewUpdate(0)
+// 	update.Timeout = 60
+
+// 	updates, err := bot.GetUpdatesChan(update)
+// 	if err != nil {
+// 		log.Error().Err(err)
+// 	}
+
+// 	for update := range updates {
+// 		if update.Message == nil {
+// 			continue
+// 		}
+
+// 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+
+// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
+// 		msg.ReplyToMessageID = update.Message.MessageID
+
+// 		bot.Send(msg)
+// 	}
+// }
 
 type priceChanStruct struct {
 	name  string
@@ -348,15 +373,19 @@ func alertManager() {
 			log.Info().Msg(fmt.Sprintf("result: %v", result))
 			resultBool = result.(bool)
 			if resultBool == true {
-				// bot := getTgBot()
 				token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
-				bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
-				if err != nil {
-					log.Error().Err(err)
-				}
+				// bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
+				// if err != nil {
+				// 	log.Error().Err(err)
+				// }
 				msgText := "notification " + alerts.Alerts[i].Expr + " has been triggered"
-				msg := tgbotapi.NewMessage(*botChannelID, msgText)
-				bot.Send(msg)
+				// msg := tgbotapi.NewMessage(*botChannelID, msgText)
+				// bot.Send(msg)
+				tokenInt, err := strconv.ParseInt(token[1:len(token)-1], 10, 64)
+				if err != nil {
+					log.Fatal().Err(err)
+				}
+				sendToTg("telebot:8000", msgText, tokenInt)
 			}
 		}
 
@@ -394,7 +423,6 @@ func handleAlertPost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"isSuccessful": true,
 		"error":        ""})
-
 }
 
 func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
@@ -487,7 +515,6 @@ func alertHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
-
 }
 
 func exHandler(w http.ResponseWriter, r *http.Request) {
@@ -601,21 +628,43 @@ func robotsHandler(w http.ResponseWriter, r *http.Request) {
 
 func startServer(gracefulWait time.Duration) {
 	r := mux.NewRouter()
+	cfg := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		// CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		// PreferServerCipherSuites: true,
+		// CipherSuites: []uint16{
+		// 	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		// 	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		// 	tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		// 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		// },
+	}
 	srv := &http.Server{
 		Addr:         "0.0.0.0:" + *flagPort,
 		WriteTimeout: time.Second * 15,
 		ReadTimeout:  time.Second * 15,
 		Handler:      r,
+		TLSConfig:    cfg,
 	}
-	r.HandleFunc("/health", healthHandler)
-	r.HandleFunc("/price", priceHandler)
-	r.HandleFunc("/pair", pairHandler)
-	r.HandleFunc("/alert", alertHandler)
-	r.HandleFunc("/ex", exHandler)
-	r.HandleFunc("/robots.txt", robotsHandler)
+	r.HandleFunc("/crypto/health", healthHandler)
+	r.HandleFunc("/crypto/price", priceHandler)
+	r.HandleFunc("/crypto/pair", pairHandler)
+	r.HandleFunc("/crypto/alert", alertHandler)
+	r.HandleFunc("/crypto/ex", exHandler)
+	r.HandleFunc("/crypto/robots.txt", robotsHandler)
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
+		var certPath, keyPath string
+		if os.Getenv(SERVER_DEPLOYMENT_TYPE) == "deployment" {
+			certPath = "/certs/fullchain1.pem"
+			keyPath = "/certs/privkey1.pem"
+		} else if os.Getenv(SERVER_DEPLOYMENT_TYPE) == "test" {
+			certPath = "/certs/server.cert"
+			keyPath = "/certs/server.key"
+		} else {
+			log.Fatal().Err(errors.New(fmt.Sprintf("unknown deployment kind: %s", SERVER_DEPLOYMENT_TYPE)))
+		}
+		if err := srv.ListenAndServeTLS(certPath, keyPath); err != nil {
 			log.Fatal().Err(err)
 		}
 	}()
