@@ -41,6 +41,7 @@ var (
 
 const (
 	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
+	coingeckoAPIURLv3            = "https://api.coingecko.com/api/v3"
 	changellyURL                 = "https://api.changelly.com"
 	TELEGRAM_BOT_TOKEN_ENV_VAR   = "TELEGRAM_BOT_TOKEN"
 	CHANGELLY_API_KEY_ENV_VAR    = "CHANGELLY_API_KEY"
@@ -109,7 +110,7 @@ type errorChanStruct struct {
 	err      error
 }
 
-func sendGetToCryptoCompare(
+func getPriceFromCryptoCompare(
 	name, unit string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
@@ -148,6 +149,47 @@ func sendGetToCryptoCompare(
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
+func getPriceFromCoinGecko(
+	name, unit string,
+	wg *sync.WaitGroup,
+	priceChan chan<- priceChanStruct,
+	errChan chan<- errorChanStruct) {
+	defer wg.Done()
+
+	params := "/simple/price?fsym=" + url.QueryEscape(name) + "&" +
+		"tsyms=" + url.QueryEscape(unit)
+	path := coingeckoAPIURLv3 + params
+	resp, err := http.Get(path)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+
+	jsonBody := make(map[string]interface{})
+	err = json.Unmarshal(body, &jsonBody)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+
+	price := jsonBody[name].(map[string]interface{})[unit].(float64)
+
+	log.Info().Msg(string(body))
+
+	priceChan <- priceChanStruct{name: name, price: price}
+	errChan <- errorChanStruct{hasError: false, err: nil}
+}
+
 func priceHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
@@ -182,7 +224,7 @@ func priceHandler(w http.ResponseWriter, r *http.Request) {
 	defer close(errChan)
 	defer close(priceChan)
 	wg.Add(1)
-	go sendGetToCryptoCompare(name, unit, &wg, priceChan, errChan)
+	go getPriceFromCryptoCompare(name, unit, &wg, priceChan, errChan)
 	wg.Wait()
 
 	select {
@@ -248,8 +290,8 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 	defer close(errChan)
 
 	wg.Add(2)
-	go sendGetToCryptoCompare(one, "USD", &wg, priceChan, errChan)
-	go sendGetToCryptoCompare(two, "USD", &wg, priceChan, errChan)
+	go getPriceFromCryptoCompare(one, "USD", &wg, priceChan, errChan)
+	go getPriceFromCryptoCompare(two, "USD", &wg, priceChan, errChan)
 	wg.Wait()
 
 	for i := 0; i < 2; i++ {
@@ -339,7 +381,7 @@ func alertManager() {
 			wg.Add(len(vars))
 
 			for i := range vars {
-				go sendGetToCryptoCompare(vars[i], "USD", &wg, priceChan, errChan)
+				go getPriceFromCryptoCompare(vars[i], "USD", &wg, priceChan, errChan)
 			}
 			wg.Wait()
 
