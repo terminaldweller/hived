@@ -48,6 +48,16 @@ const (
 	SERVER_DEPLOYMENT_TYPE       = "SERVER_DEPLOYMENT_TYPE"
 )
 
+// OWASP: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
+func addSecureHeaders(w *http.ResponseWriter) {
+	(*w).Header().Set("Cache-Control", "no-store")
+	(*w).Header().Set("Content-Security-Policy", "default-src https;")
+	(*w).Header().Set("Strict-Transport-Security", "max-age=63072000;")
+	(*w).Header().Set("X-Content-Type-Options", "nosniff")
+	(*w).Header().Set("X-Frame-Options", "DENY")
+	(*w).Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+}
+
 func sendToTg(address, msg string, channelId int64) {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -67,37 +77,6 @@ func sendToTg(address, msg string, channelId int64) {
 
 	log.Info().Msg(fmt.Sprintf("%v", r))
 }
-
-// func runTgBot() {
-// 	// bot := getTgBot()
-// 	token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
-// 	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
-// 	if err != nil {
-// 		log.Error().Err(err)
-// 	}
-// 	log.Debug().Msg("authorized on account bot_bloodstalker")
-
-// 	update := tgbotapi.NewUpdate(0)
-// 	update.Timeout = 60
-
-// 	updates, err := bot.GetUpdatesChan(update)
-// 	if err != nil {
-// 		log.Error().Err(err)
-// 	}
-
-// 	for update := range updates {
-// 		if update.Message == nil {
-// 			continue
-// 		}
-
-// 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-// 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-// 		msg.ReplyToMessageID = update.Message.MessageID
-
-// 		bot.Send(msg)
-// 	}
-// }
 
 type priceChanStruct struct {
 	name  string
@@ -153,6 +132,7 @@ func priceHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
+	addSecureHeaders(&w)
 
 	var name string
 	var unit string
@@ -216,6 +196,7 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
+	addSecureHeaders(&w)
 
 	var one string
 	var two string
@@ -374,13 +355,7 @@ func alertManager() {
 			resultBool = result.(bool)
 			if resultBool == true {
 				token := os.Getenv(TELEGRAM_BOT_TOKEN_ENV_VAR)
-				// bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
-				// if err != nil {
-				// 	log.Error().Err(err)
-				// }
 				msgText := "notification " + alerts.Alerts[i].Expr + " has been triggered"
-				// msg := tgbotapi.NewMessage(*botChannelID, msgText)
-				// bot.Send(msg)
 				tokenInt, err := strconv.ParseInt(token[1:len(token)-1], 10, 64)
 				if err != nil {
 					log.Fatal().Err(err)
@@ -506,6 +481,7 @@ func handleAlertGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func alertHandler(w http.ResponseWriter, r *http.Request) {
+	addSecureHeaders(&w)
 	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
 		handleAlertPost(w, r)
 	} else if r.Method == "DELETE" {
@@ -519,6 +495,7 @@ func alertHandler(w http.ResponseWriter, r *http.Request) {
 
 func exHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
+	addSecureHeaders(&w)
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
@@ -586,6 +563,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	IsHivedOk := true
 	var IsRedisOk bool
 
+	addSecureHeaders(&w)
 	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
@@ -620,6 +598,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func robotsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/plain")
+	addSecureHeaders(&w)
 	json.NewEncoder(w).Encode(struct {
 		UserAgents string `json:"User-Agents"`
 		Disallow   string `json:"Disallow"`
@@ -696,7 +675,6 @@ func main() {
 	defer rdb.Close()
 
 	setupLogging()
-	// go runTgBot()
 	go alertManager()
 	startServer(gracefulWait)
 }

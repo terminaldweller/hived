@@ -1,6 +1,7 @@
 FROM alpine:3.13 as builder
 RUN apk update && apk upgrade
 RUN apk add go git
+ENV GOPROXY=https://goproxy.io
 COPY go.* /hived/
 RUN cd /hived && go mod download
 COPY *.go /hived/

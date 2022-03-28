@@ -1,6 +1,7 @@
 FROM alpine:3.13 as builder
 RUN apk update && apk upgrade
 RUN apk add go git
+ENV GOPROXY=https://goproxy.io
 COPY go.* /telebot/
 RUN cd /telebot && go mod download
 COPY *.go /telebot/
