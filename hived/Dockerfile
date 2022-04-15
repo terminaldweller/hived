@@ -7,7 +7,7 @@ RUN cd /hived && go mod download
 COPY *.go /hived/
 RUN cd /hived && go build
 
-FROM node:lts-alpine3.13 as certbuilder
+FROM alpine:3.15 as certbuilder
 RUN apk add openssl
 WORKDIR /certs
 RUN openssl req -nodes -new -x509 -subj="/C=US/ST=Denial/L=springfield/O=Dis/CN=localhost" -keyout server.key -out server.cert
