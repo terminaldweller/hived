@@ -1,4 +1,5 @@
 FROM alpine:3.13 as builder
+ENV GOPROXY=https://goproxy.io
 RUN apk update && apk upgrade
 RUN apk add go git
 ENV GOPROXY=https://goproxy.io
