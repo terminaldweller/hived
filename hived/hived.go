@@ -41,6 +41,7 @@ var (
 
 const (
 	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
+	coingeckoAPIURLv3            = "https://api.coingecko.com/api/v3"
 	changellyURL                 = "https://api.changelly.com"
 	TELEGRAM_BOT_TOKEN_ENV_VAR   = "TELEGRAM_BOT_TOKEN"
 	CHANGELLY_API_KEY_ENV_VAR    = "CHANGELLY_API_KEY"
@@ -86,6 +87,47 @@ type priceChanStruct struct {
 type errorChanStruct struct {
 	hasError bool
 	err      error
+}
+
+func getPriceFromCoinGecko(
+	name, unit string,
+	wg *sync.WaitGroup,
+	priceChan chan<- priceChanStruct,
+	errChan chan<- errorChanStruct) {
+	defer wg.Done()
+
+	params := "/simple/price?fsym=" + url.QueryEscape(name) + "&" +
+		"tsyms=" + url.QueryEscape(unit)
+	path := coingeckoAPIURLv3 + params
+	resp, err := http.Get(path)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+
+	jsonBody := make(map[string]interface{})
+	err = json.Unmarshal(body, &jsonBody)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+
+	price := jsonBody[name].(map[string]interface{})[unit].(float64)
+
+	log.Info().Msg(string(body))
+
+	priceChan <- priceChanStruct{name: name, price: price}
+	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
 func sendGetToCryptoCompare(
