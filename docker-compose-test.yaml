@@ -36,6 +36,19 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
+  arbiter:
+    image: arbiter
+    build:
+      context: ./arbiter
+    networks:
+      - mainnet
+    ports:
+      - "8009:8009"
+    entrypoint: ["/arbiter/arbiter"]
+    cap_drop:
+      - ALL
+    environment:
+      - SERVER_DEPLOYMENT_TYPE=test
   redis:
     image: redis:6.2-alpine
     networks:

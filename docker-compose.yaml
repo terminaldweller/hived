@@ -51,6 +51,19 @@ services:
       - ALLOW_EMPTY_PASSWORD=yes
     volumes:
       - redis-data:/data/
+  arbiter:
+    image: arbiter
+    build:
+      context: ./arbiter
+    networks:
+      - mainnet
+    ports:
+      - "8009:8009"
+    entrypoint: ["/arbiter/abiter"]
+    cap_drop:
+      - ALL
+    environment:
+      - SERVER_DEPLOYMENT_TYPE=deployment
 networks:
   mainnet:
     driver: bridge

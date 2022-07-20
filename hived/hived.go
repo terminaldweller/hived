@@ -130,7 +130,7 @@ func getPriceFromCoinGecko(
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
-func sendGetToCryptoCompare(
+func getPriceFromCryptoCompare(
 	name, unit string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
@@ -204,7 +204,7 @@ func priceHandler(w http.ResponseWriter, r *http.Request) {
 	defer close(errChan)
 	defer close(priceChan)
 	wg.Add(1)
-	go sendGetToCryptoCompare(name, unit, &wg, priceChan, errChan)
+	go getPriceFromCryptoCompare(name, unit, &wg, priceChan, errChan)
 	wg.Wait()
 
 	select {
@@ -271,8 +271,8 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 	defer close(errChan)
 
 	wg.Add(2)
-	go sendGetToCryptoCompare(one, "USD", &wg, priceChan, errChan)
-	go sendGetToCryptoCompare(two, "USD", &wg, priceChan, errChan)
+	go getPriceFromCryptoCompare(one, "USD", &wg, priceChan, errChan)
+	go getPriceFromCryptoCompare(two, "USD", &wg, priceChan, errChan)
 	wg.Wait()
 
 	for i := 0; i < 2; i++ {
@@ -362,7 +362,7 @@ func alertManager() {
 			wg.Add(len(vars))
 
 			for i := range vars {
-				go sendGetToCryptoCompare(vars[i], "USD", &wg, priceChan, errChan)
+				go getPriceFromCryptoCompare(vars[i], "USD", &wg, priceChan, errChan)
 			}
 			wg.Wait()
 
