@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"time"
 
@@ -33,7 +34,28 @@ var (
 const (
 	SERVER_DEPLOYMENT_TYPE = "SERVER_DEPLOYMENT_TYPE"
 	coingeckoAPIURLv3      = "https://api.coingecko.com/api/v3"
+	coincapAPIURLv2        = "https://api.coincap.io/v2"
 )
+
+// https://docs.coincap.io/
+type CoinCapAssetGetResponseData struct {
+	Id                string `json:"id"`
+	Rank              string `json:"rank"`
+	Symbol            string `json:"symbol"`
+	Name              string `json:"name"`
+	Supply            string `json:"supply"`
+	MaxSupply         string `json:"maxSupply"`
+	MarketCapUsd      string `json:"marketCapUsd"`
+	VolumeUsd24Hr     string `json:"volumeUsd24Hr"`
+	PriceUsd          string `json:"priceUsd"`
+	ChangePercent24Hr string `json:"changePercent24Hr"`
+	Vwap24Hr          string `json:"vwap24Hr"`
+}
+
+type CoinCapAssetGetResponse struct {
+	Data      CoinCapAssetGetResponseData `json:"data"`
+	TimeStamp int64                       `json:"timestamp"`
+}
 
 type HttpHandlerFunc func(http.ResponseWriter, *http.Request)
 
@@ -120,6 +142,57 @@ func getPriceFromCoinGecko(
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
+func getPriceFromCoinCap(
+	name, unit string,
+	wg *sync.WaitGroup,
+	priceChan chan<- priceChanStruct,
+	errChan chan<- errorChanStruct) {
+	defer wg.Done()
+
+	params := "/assets/" + url.QueryEscape(name)
+	path := coincapAPIURLv2 + params
+	fmt.Println(path)
+	resp, err := http.Get(path)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+	fmt.Println(string(body))
+
+	var coinCapAssetGetResponse CoinCapAssetGetResponse
+	// jsonBody := make(map[string]interface{})
+	// err = json.Unmarshal(body, &jsonBody)
+	err = json.Unmarshal(body, &coinCapAssetGetResponse)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+
+	// price := jsonBody[name].(map[string]interface{})[unit].(float64)
+	price, err := strconv.ParseFloat(coinCapAssetGetResponse.Data.PriceUsd, 64)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+	}
+	fmt.Println(price)
+
+	log.Info().Msg(string(body))
+
+	priceChan <- priceChanStruct{name: name, price: price}
+	errChan <- errorChanStruct{hasError: false, err: nil}
+}
+
 func arbHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
@@ -172,7 +245,60 @@ func arbHandler(w http.ResponseWriter, r *http.Request) {
 		"err":          "",
 		"isSuccessful": true,
 	})
+}
 
+func coincapHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
+	if r.Method != "GET" {
+		http.Error(w, "Method is not supported.", http.StatusNotFound)
+	}
+	addSecureHeaders(&w)
+
+	var name string
+	var unit string
+	params := r.URL.Query()
+	for key, value := range params {
+		switch key {
+		case "name":
+			name = value[0]
+		case "unit":
+			unit = value[0]
+		default:
+			log.Error().Err(errors.New("Got unexpected parameter."))
+		}
+	}
+
+	priceChan := make(chan priceChanStruct, 1)
+	errChan := make(chan errorChanStruct, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	getPriceFromCoinCap(name, unit, &wg, priceChan, errChan)
+	wg.Wait()
+
+	select {
+	case err := <-errChan:
+		if err.hasError != false {
+			log.Error().Err(err.err)
+		}
+	default:
+		log.Error().Err(errors.New("We shouldnt be here"))
+	}
+
+	var price priceChanStruct
+	select {
+	case priceCh := <-priceChan:
+		price = priceCh
+	default:
+		log.Fatal().Err(errors.New("We shouldnt be here"))
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":         price.name,
+		"price":        price.price,
+		"unit":         "USD",
+		"err":          "",
+		"isSuccessful": true,
+	})
 }
 
 func setupLogging() {
@@ -236,7 +362,10 @@ func main() {
 	defer rdb.Close()
 
 	setupLogging()
-	var handlerFuncs = []HttpHandler{{name: "/arb", function: arbHandler}}
+	var handlerFuncs = []HttpHandler{
+		{name: "/arb/gecko", function: arbHandler},
+		{name: "/arb/coincap", function: coincapHandler},
+	}
 
 	startServer(gracefulWait, handlerFuncs, SERVER_DEPLOYMENT_TYPE, *flagPort)
 }
