@@ -145,6 +145,7 @@ func getPriceFromCryptoCompare(
 		priceChan <- priceChanStruct{name: name, price: 0.}
 		errChan <- errorChanStruct{hasError: true, err: err}
 		log.Error().Err(err)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -169,7 +170,7 @@ func getPriceFromCryptoCompare(
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
-func priceHandler(w http.ResponseWriter, r *http.Request) {
+func PriceHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
@@ -232,7 +233,7 @@ func priceHandler(w http.ResponseWriter, r *http.Request) {
 		"isSuccessful": true})
 }
 
-func pairHandler(w http.ResponseWriter, r *http.Request) {
+func PairHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	w.Header().Add("Content-Type", "application/json")
 	if r.Method != "GET" {
@@ -415,7 +416,7 @@ type addAlertJSONType struct {
 	Expr string `json:"expr"`
 }
 
-func handleAlertPost(w http.ResponseWriter, r *http.Request) {
+func (this AlertHandler) HandleAlertPost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	bodyBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -435,14 +436,14 @@ func handleAlertPost(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	key := "alert:" + bodyJSON.Name
-	rdb.Set(ctx, bodyJSON.Name, bodyJSON.Expr, 0)
-	rdb.SAdd(ctx, "alertkeys", key)
+	this.rdb.Set(ctx, bodyJSON.Name, bodyJSON.Expr, 0)
+	this.rdb.SAdd(ctx, "alertkeys", key)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"isSuccessful": true,
 		"error":        ""})
 }
 
-func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
+func (this AlertHandler) HandleAlertDelete(w http.ResponseWriter, r *http.Request) {
 	var Id string
 	w.Header().Add("Content-Type", "application/json")
 	params := r.URL.Query()
@@ -465,9 +466,9 @@ func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 
-	rdb.Del(ctx, Id)
+	this.rdb.Del(ctx, Id)
 	setKey := "alert:" + Id
-	rdb.SRem(ctx, "alertkeys", setKey)
+	this.rdb.SRem(ctx, "alertkeys", setKey)
 	log.Printf(setKey)
 
 	json.NewEncoder(w).Encode(struct {
@@ -476,7 +477,7 @@ func handleAlertDelete(w http.ResponseWriter, r *http.Request) {
 	}{IsSuccessful: true, Err: ""})
 }
 
-func handleAlertGet(w http.ResponseWriter, r *http.Request) {
+func (this AlertHandler) HandleAlertGet(w http.ResponseWriter, r *http.Request) {
 	var Id string
 	w.Header().Add("Content-Type", "application/json")
 	params := r.URL.Query()
@@ -499,7 +500,7 @@ func handleAlertGet(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 
-	redisResult := rdb.Get(ctx, Id)
+	redisResult := this.rdb.Get(ctx, Id)
 	redisResultString, err := redisResult.Result()
 	if err != nil {
 		log.Err(err)
@@ -524,12 +525,13 @@ func handleAlertGet(w http.ResponseWriter, r *http.Request) {
 
 func alertHandler(w http.ResponseWriter, r *http.Request) {
 	addSecureHeaders(&w)
+	alertHandler := AlertHandler{rdb: rdb}
 	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
-		handleAlertPost(w, r)
+		alertHandler.HandleAlertPost(w, r)
 	} else if r.Method == "DELETE" {
-		handleAlertDelete(w, r)
+		alertHandler.HandleAlertDelete(w, r)
 	} else if r.Method == "GET" {
-		handleAlertGet(w, r)
+		alertHandler.HandleAlertGet(w, r)
 	} else {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
@@ -667,12 +669,12 @@ func startServer(gracefulWait time.Duration) {
 		Handler:      r,
 		TLSConfig:    cfg,
 	}
-	r.HandleFunc("/crypto/health", healthHandler)
-	r.HandleFunc("/crypto/price", priceHandler)
-	r.HandleFunc("/crypto/pair", pairHandler)
-	r.HandleFunc("/crypto/alert", alertHandler)
-	r.HandleFunc("/crypto/ex", exHandler)
-	r.HandleFunc("/crypto/robots.txt", robotsHandler)
+	r.HandleFunc("/crypto/v1/health", healthHandler)
+	r.HandleFunc("/crypto/v1/price", PriceHandler)
+	r.HandleFunc("/crypto/v1/pair", PairHandler)
+	r.HandleFunc("/crypto/v1/alert", alertHandler)
+	r.HandleFunc("/crypto/v1/ex", exHandler)
+	r.HandleFunc("/crypto/v1/robots.txt", robotsHandler)
 
 	go func() {
 		var certPath, keyPath string

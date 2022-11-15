@@ -363,8 +363,8 @@ func main() {
 
 	setupLogging()
 	var handlerFuncs = []HttpHandler{
-		{name: "/arb/gecko", function: arbHandler},
-		{name: "/arb/coincap", function: coincapHandler},
+		{name: "/crypto/v1/arb/gecko", function: arbHandler},
+		{name: "/crypto/v1/arb/coincap", function: coincapHandler},
 	}
 
 	startServer(gracefulWait, handlerFuncs, SERVER_DEPLOYMENT_TYPE, *flagPort)
