@@ -59,7 +59,7 @@ services:
       - mainnet
     ports:
       - "8009:8009"
-    entrypoint: ["/arbiter/abiter"]
+    entrypoint: ["/arbiter/arbiter"]
     cap_drop:
       - ALL
     environment:
