@@ -60,6 +60,8 @@ services:
     ports:
       - "8009:8009"
     entrypoint: ["/arbiter/arbiter"]
+    volumes:
+      - /etc/letsencrypt/archive/api.terminaldweller.com/:/certs/
     cap_drop:
       - ALL
     environment:

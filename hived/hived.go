@@ -36,6 +36,7 @@ var (
 	redisPassword       = flag.String("redispassword", "", "determines the password of the redis db")
 	redisDB             = flag.Int64("redisdb", 0, "determines the db number")
 	botChannelID        = flag.Int64("botchannelid", 146328407, "determines the channel id the telgram bot should send messages to")
+	cacheDuration       = flag.Float64("cacheDuration", 300_000, "determines the price cache validity duration in miliseconds")
 	rdb                 *redis.Client
 )
 
@@ -89,45 +90,41 @@ type errorChanStruct struct {
 	err      error
 }
 
-func getPriceFromCoinGecko(
-	name, unit string,
+type APISource int
+
+const (
+	CryptoCompareSource = iota
+	CoinGeckoSource
+	CoinCapSource
+)
+
+// TODO-add more sources
+// TODO-do a round robin
+func chooseGetPriceSource() int {
+	return CryptoCompareSource
+}
+
+func getPrice(name, unit string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
 	errChan chan<- errorChanStruct) {
-	defer wg.Done()
 
-	params := "/simple/price?fsym=" + url.QueryEscape(name) + "&" +
-		"tsyms=" + url.QueryEscape(unit)
-	path := coingeckoAPIURLv3 + params
-	resp, err := http.Get(path)
+	// check price cache
+	ctx := context.Background()
+	val, err := rdb.Get(ctx, name+"_price").Float64()
 	if err != nil {
-		priceChan <- priceChanStruct{name: name, price: 0.}
-		errChan <- errorChanStruct{hasError: true, err: err}
-		log.Error().Err(err)
+		fmt.Println("price cache miss")
+		source := chooseGetPriceSource()
+
+		if source == CryptoCompareSource {
+			getPriceFromCryptoCompare(name, unit, wg, priceChan, errChan)
+		}
+	} else {
+		fmt.Println("price cache hit ", val)
+		priceChan <- priceChanStruct{name: name, price: val}
+		errChan <- errorChanStruct{hasError: false, err: nil}
+		wg.Done()
 	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		priceChan <- priceChanStruct{name: name, price: 0.}
-		errChan <- errorChanStruct{hasError: true, err: err}
-		log.Error().Err(err)
-	}
-
-	jsonBody := make(map[string]interface{})
-	err = json.Unmarshal(body, &jsonBody)
-	if err != nil {
-		priceChan <- priceChanStruct{name: name, price: 0.}
-		errChan <- errorChanStruct{hasError: true, err: err}
-		log.Error().Err(err)
-	}
-
-	price := jsonBody[name].(map[string]interface{})[unit].(float64)
-
-	log.Info().Msg(string(body))
-
-	priceChan <- priceChanStruct{name: name, price: price}
-	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
 func getPriceFromCryptoCompare(
@@ -165,6 +162,13 @@ func getPriceFromCryptoCompare(
 	}
 
 	log.Info().Msg(string(body))
+
+	// add a price cache
+	ctx := context.Background()
+	err = rdb.Set(ctx, name+"_price", jsonBody[unit], time.Duration(*cacheDuration*1000000)).Err()
+	if err != nil {
+		log.Error().Err(err)
+	}
 
 	priceChan <- priceChanStruct{name: name, price: jsonBody[unit]}
 	errChan <- errorChanStruct{hasError: false, err: nil}
@@ -205,7 +209,8 @@ func PriceHandler(w http.ResponseWriter, r *http.Request) {
 	defer close(errChan)
 	defer close(priceChan)
 	wg.Add(1)
-	go getPriceFromCryptoCompare(name, unit, &wg, priceChan, errChan)
+	// TODO- check cache
+	go getPrice(name, unit, &wg, priceChan, errChan)
 	wg.Wait()
 
 	select {
@@ -272,8 +277,8 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 	defer close(errChan)
 
 	wg.Add(2)
-	go getPriceFromCryptoCompare(one, "USD", &wg, priceChan, errChan)
-	go getPriceFromCryptoCompare(two, "USD", &wg, priceChan, errChan)
+	go getPrice(one, "USD", &wg, priceChan, errChan)
+	go getPrice(two, "USD", &wg, priceChan, errChan)
 	wg.Wait()
 
 	for i := 0; i < 2; i++ {
@@ -363,7 +368,8 @@ func alertManager() {
 			wg.Add(len(vars))
 
 			for i := range vars {
-				go getPriceFromCryptoCompare(vars[i], "USD", &wg, priceChan, errChan)
+				// TODO-get from cache
+				go getPrice(vars[i], "USD", &wg, priceChan, errChan)
 			}
 			wg.Wait()
 
@@ -652,15 +658,15 @@ func robotsHandler(w http.ResponseWriter, r *http.Request) {
 func startServer(gracefulWait time.Duration) {
 	r := mux.NewRouter()
 	cfg := &tls.Config{
-		MinVersion: tls.VersionTLS13,
-		// CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-		// PreferServerCipherSuites: true,
-		// CipherSuites: []uint16{
-		// 	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-		// 	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-		// 	tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-		// 	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-		// },
+		MinVersion:               tls.VersionTLS13,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
 	}
 	srv := &http.Server{
 		Addr:         "0.0.0.0:" + *flagPort,
