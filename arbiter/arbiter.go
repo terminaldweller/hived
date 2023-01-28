@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/net/proxy"
 )
 
 var (
@@ -74,6 +76,28 @@ type errorChanStruct struct {
 	err      error
 }
 
+func GetProxiedClient() (*http.Client, error) {
+	proxyURL := os.Getenv("ALL_PROXY")
+	if proxyURL == "" {
+		proxyURL = os.Getenv("HTTPS_PROXY")
+	}
+	dialer, err := proxy.SOCKS5("tcp", proxyURL, nil, proxy.Direct)
+	if err != nil {
+		return nil, err
+	}
+	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
+		return dialer.Dial(network, address)
+	}
+
+	transport := &http.Transport{
+		DialContext:       dialContext,
+		DisableKeepAlives: true,
+	}
+	client := &http.Client{Transport: transport}
+
+	return client, nil
+}
+
 // OWASP: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
 func addSecureHeaders(w *http.ResponseWriter) {
 	(*w).Header().Set("Cache-Control", "no-store")
@@ -84,7 +108,7 @@ func addSecureHeaders(w *http.ResponseWriter) {
 	(*w).Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 }
 
-//binance
+// binance
 func getPriceFromBinance(name, unit string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
@@ -92,7 +116,7 @@ func getPriceFromBinance(name, unit string,
 
 }
 
-//kucoin
+// kucoin
 func getPriceFromKu(name, uni string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
@@ -111,11 +135,22 @@ func getPriceFromCoinGecko(
 		"vs_currencies=" + url.QueryEscape(unit)
 	path := coingeckoAPIURLv3 + params
 	fmt.Println(path)
-	resp, err := http.Get(path)
+	// resp, err := http.Get(path)
+	client, err := GetProxiedClient()
 	if err != nil {
 		priceChan <- priceChanStruct{name: name, price: 0.}
 		errChan <- errorChanStruct{hasError: true, err: err}
 		log.Error().Err(err)
+		return
+	}
+
+	resp, err := client.Get(path)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+		fmt.Println(err)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -152,11 +187,20 @@ func getPriceFromCoinCap(
 	params := "/assets/" + url.QueryEscape(name)
 	path := coincapAPIURLv2 + params
 	fmt.Println(path)
-	resp, err := http.Get(path)
+	client, err := GetProxiedClient()
 	if err != nil {
 		priceChan <- priceChanStruct{name: name, price: 0.}
 		errChan <- errorChanStruct{hasError: true, err: err}
 		log.Error().Err(err)
+		return
+	}
+	// resp, err := http.Get(path)
+	resp, err := client.Get(path)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: 0.}
+		errChan <- errorChanStruct{hasError: true, err: err}
+		log.Error().Err(err)
+		return
 	}
 	defer resp.Body.Close()
 
