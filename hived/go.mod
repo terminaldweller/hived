@@ -8,7 +8,9 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/rs/zerolog v1.20.0
 	github.com/terminaldweller/grpc v1.0.3
+	golang.org/x/net v0.0.0-20201202161906-c7110b5ffcbb
 	google.golang.org/grpc v1.42.0
+	google.golang.org/protobuf v1.27.1
 )
 
 require (
@@ -18,9 +20,7 @@ require (
 	go.opentelemetry.io/otel v0.17.0 // indirect
 	go.opentelemetry.io/otel/metric v0.17.0 // indirect
 	go.opentelemetry.io/otel/trace v0.17.0 // indirect
-	golang.org/x/net v0.0.0-20201202161906-c7110b5ffcbb // indirect
 	golang.org/x/sys v0.0.0-20210112080510-489259a85091 // indirect
 	golang.org/x/text v0.3.3 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
 )
