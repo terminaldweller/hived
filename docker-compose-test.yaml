@@ -21,6 +21,7 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
+      - ALL_PROXY=192.168.1.214:9995
   telebot:
     image: telebot
     build:
@@ -36,6 +37,7 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
+      - ALL_PROXY=192.168.1.214:9995
   arbiter:
     image: arbiter
     build:

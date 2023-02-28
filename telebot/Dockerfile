@@ -1,5 +1,7 @@
 FROM alpine:3.16 as builder
 ENV GOPROXY=https://goproxy.io
+ENV ALL_PROXY=socks5://192.168.1.214:9995
+ENV HTTPS_PROXY=socks5://192.168.1.214:9995
 RUN apk update && apk upgrade
 RUN apk add go git
 ENV GOPROXY=https://goproxy.io
@@ -18,4 +20,6 @@ FROM alpine:3.16
 COPY --from=certbuilder /certs /certs
 COPY --from=builder /telebot/telebot /telebot/
 COPY ./docker-entrypoint.sh /telebot/
+ENV ALL_PROXY=
+ENV HTTPS_PROXY=
 ENTRYPOINT ["/telebot/docker-entrypoint.sh"]
