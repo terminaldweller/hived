@@ -19,7 +19,8 @@ services:
       - telebot
     entrypoint: ["/hived/docker-entrypoint.sh"]
     volumes:
-      - /etc/letsencrypt/archive/api.terminaldweller.com/:/certs/
+      - /etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem
+      - /etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem
     cap_drop:
       - ALL
     environment:
@@ -61,7 +62,8 @@ services:
       - "8009:8009"
     entrypoint: ["/arbiter/arbiter"]
     volumes:
-      - /etc/letsencrypt/archive/api.terminaldweller.com/:/certs/
+      - /etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem
+      - /etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem
     cap_drop:
       - ALL
     environment:

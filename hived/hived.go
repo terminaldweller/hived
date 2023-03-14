@@ -822,8 +822,8 @@ func startServer(gracefulWait time.Duration, flagPort string) {
 
 		switch os.Getenv(serverDeploymentType) {
 		case "deployment":
-			certPath = "/certs/fullchain1.pem"
-			keyPath = "/certs/privkey1.pem"
+			certPath = "/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem"
+			keyPath = "/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem"
 		case "test":
 			certPath = "/certs/server.cert"
 			keyPath = "/certs/server.key"
