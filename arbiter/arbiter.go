@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,7 +19,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/net/proxy"
 )
 
 var (
@@ -87,28 +84,9 @@ type errorChanStruct struct {
 }
 
 func GetProxiedClient() (*http.Client, error) {
-	proxyURL := os.Getenv("ALL_PROXY")
-	if proxyURL == "" {
-		proxyURL = os.Getenv("HTTPS_PROXY")
-	}
-
-	dialer, err := proxy.SOCKS5("tcp", proxyURL, nil, proxy.Direct)
-	if err != nil {
-		return nil, fmt.Errorf("[GetProxiedClient] : %w", err)
-	}
-
-	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		netConn, err := dialer.Dial(network, address)
-		if err == nil {
-			return netConn, nil
-		}
-
-		return netConn, fmt.Errorf("[dialContext] : %w", err)
-	}
-
 	transport := &http.Transport{
-		DialContext:       dialContext,
 		DisableKeepAlives: true,
+		Proxy:             http.ProxyFromEnvironment,
 	}
 	client := &http.Client{
 		Transport:     transport,

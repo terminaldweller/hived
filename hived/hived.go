@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,7 +21,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	pb "github.com/terminaldweller/grpc/telebot/v1"
-	"golang.org/x/net/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -61,28 +59,9 @@ var (
 )
 
 func GetProxiedClient() (*http.Client, error) {
-	proxyURL := os.Getenv("ALL_PROXY")
-	if proxyURL == "" {
-		proxyURL = os.Getenv("HTTPS_PROXY")
-	}
-
-	dialer, err := proxy.SOCKS5("tcp", proxyURL, nil, proxy.Direct)
-	if err != nil {
-		return nil, fmt.Errorf("[GetProxiedClient] : %w", err)
-	}
-
-	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		netConn, err := dialer.Dial(network, address)
-		if err == nil {
-			return netConn, nil
-		}
-
-		return netConn, fmt.Errorf("[dialContext] : %w", err)
-	}
-
 	transport := &http.Transport{
-		DialContext:       dialContext,
 		DisableKeepAlives: true,
+		Proxy:             http.ProxyFromEnvironment,
 	}
 	client := &http.Client{
 		Transport:     transport,
