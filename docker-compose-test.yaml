@@ -12,7 +12,7 @@ services:
       - mainnet
       - telenet
     ports:
-      - "8008:8008"
+      - "10008:8008"
     depends_on:
       - redis
       - telebot
@@ -21,7 +21,6 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
-      - HTTPS_PROXY=socks5://192.168.1.214:9995
   telebot:
     image: telebot
     build:
@@ -31,13 +30,12 @@ services:
     networks:
       - telenet
     ports:
-      - "9009:8000"
+      - "10009:8000"
     entrypoint: ["/telebot/docker-entrypoint.sh"]
     cap_drop:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
-      - HTTPS_PROXY=socks5://192.168.1.214:9995
   arbiter:
     image: arbiter
     build:
@@ -51,13 +49,12 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
-      - HTTPS_PROXY=socks5://192.168.1.214:9995
   redis:
     image: redis:6.2-alpine
     networks:
       - mainnet
     ports:
-      - "6379:6379"
+      - "6380:6379"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     volumes:

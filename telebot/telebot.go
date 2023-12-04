@@ -69,12 +69,13 @@ func GetProxiedClient() (*http.Client, error) {
 func getTGBot() *tgbotapi.BotAPI {
 	token := os.Getenv(telegramBotTokenEnvVar)
 
-	client, err := GetProxiedClient()
-	if err != nil {
-		log.Fatal().Err(err)
-	}
+	// client, err := GetProxiedClient()
+	// if err != nil {
+	// 	log.Fatal().Err(err)
+	// }
 
-	bot, err := tgbotapi.NewBotAPIWithClient(token[1:len(token)-1], client)
+	// bot, err := tgbotapi.NewBotAPIWithClient(token[1:len(token)-1], client)
+	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
 	if err != nil {
 		log.Fatal().Err(err)
 	}
@@ -84,6 +85,7 @@ func getTGBot() *tgbotapi.BotAPI {
 
 func sendMessage(bot *tgbotapi.BotAPI, msgText string, channelID int64) error {
 	msg := tgbotapi.NewMessage(channelID, msgText)
+	fmt.Println("XXXXXXXXXXXXXXXXXX", msg)
 	_, err := bot.Send(msg)
 
 	return err

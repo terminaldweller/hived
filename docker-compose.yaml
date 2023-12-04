@@ -13,7 +13,7 @@ services:
       - telenet
     restart: unless-stopped
     ports:
-      - "8008:8008"
+      - "8007:8008"
     depends_on:
       - redis
       - telebot
