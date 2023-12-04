@@ -1,7 +1,5 @@
 FROM alpine:3.18 as builder
 ENV GOPROXY=https://goproxy.io
-ENV ALL_PROXY=socks5://192.168.1.214:9995
-ENV HTTPS_PROXY=socks5://192.168.1.214:9995
 RUN apk update && apk upgrade
 RUN apk add go git
 ENV GOPROXY=https://goproxy.io
