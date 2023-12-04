@@ -58,7 +58,7 @@ var (
 	errUnknownDeploymentKind = errors.New("unknown deployment kind")
 )
 
-func GetProxiedClient() (*http.Client, error) {
+func GetProxiedClient() *http.Client {
 	transport := &http.Transport{
 		DisableKeepAlives: true,
 		Proxy:             http.ProxyFromEnvironment,
@@ -70,7 +70,7 @@ func GetProxiedClient() (*http.Client, error) {
 		Jar:           nil,
 	}
 
-	return client, nil
+	return client
 }
 
 // OWASP: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
@@ -180,12 +180,7 @@ func getPriceFromCryptoCompare(
 		"tsyms=" + url.QueryEscape(unit)
 	path := cryptocomparePriceURL + params
 
-	client, err := GetProxiedClient()
-	if err != nil {
-		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
-
-		return
-	}
+	client := GetProxiedClient()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -431,6 +426,7 @@ func getAlerts() alertsType {
 	return alerts
 }
 
+// FIXME- there is a crash here
 func alertManagerWorker(alert alertType) {
 	expression, err := govaluate.NewEvaluableExpression(alert.Expr)
 	if err != nil {

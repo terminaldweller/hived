@@ -1,4 +1,4 @@
-FROM alpine:3.16 as builder
+FROM alpine:3.18 as builder
 ENV GOPROXY=https://goproxy.io
 ENV ALL_PROXY=socks5://192.168.1.214:9995
 ENV HTTPS_PROXY=socks5://192.168.1.214:9995
@@ -10,13 +10,13 @@ RUN cd /telebot && go mod download
 COPY *.go /telebot/
 RUN cd /telebot && go build
 
-FROM alpine:3.16 as certbuilder
+FROM alpine:3.18 as certbuilder
 RUN apk add openssl
 WORKDIR /certs
 RUN openssl req -nodes -new -x509 -subj="/C=US/ST=Denial/L=springfield/O=Dis/CN=localhost" -keyout server.key -out server.cert
 
 # FROM gcr.io/distroless/static-debian10
-FROM alpine:3.16
+FROM alpine:3.18
 COPY --from=certbuilder /certs /certs
 COPY --from=builder /telebot/telebot /telebot/
 COPY ./docker-entrypoint.sh /telebot/
