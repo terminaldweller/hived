@@ -33,23 +33,50 @@ type server struct {
 }
 
 func GetProxiedClient() (*http.Client, error) {
+	var isProxied bool
 	proxyURL := os.Getenv("ALL_PROXY")
 	if proxyURL == "" {
 		proxyURL = os.Getenv("HTTPS_PROXY")
 	}
 
-	dialer, err := proxy.SOCKS5("tcp", proxyURL, nil, proxy.Direct)
-	if err != nil {
-		return nil, fmt.Errorf("[GetProxiedClient] : %w", err)
+	if proxyURL == "" {
+		isProxied = false
+	}
+
+	var dialer_proxy proxy.Dialer
+	var dialer net.Dialer
+	var err error
+
+	if isProxied {
+		dialer_proxy, err = proxy.SOCKS5("tcp", proxyURL, nil, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("[GetProxiedClient] : %w", err)
+		}
+	} else {
+		dialer = net.Dialer{
+			Timeout: 5 * time.Second,
+		}
+		if err != nil {
+			return nil, fmt.Errorf("[GetProxiedClient] : %w", err)
+		}
 	}
 
 	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		netConn, err := dialer.Dial(network, address)
-		if err == nil {
-			return netConn, nil
-		}
+		if isProxied {
+			netConn, err := dialer_proxy.Dial(network, address)
+			if err == nil {
+				return netConn, nil
+			}
 
-		return netConn, fmt.Errorf("[dialContext] : %w", err)
+			return netConn, fmt.Errorf("[dialContext] : %w", err)
+		} else {
+			netConn, err := dialer.Dial(network, address)
+			if err == nil {
+				return netConn, nil
+			}
+
+			return netConn, fmt.Errorf("[dialContext] : %w", err)
+		}
 	}
 
 	transport := &http.Transport{
@@ -85,7 +112,6 @@ func getTGBot() *tgbotapi.BotAPI {
 
 func sendMessage(bot *tgbotapi.BotAPI, msgText string, channelID int64) error {
 	msg := tgbotapi.NewMessage(channelID, msgText)
-	fmt.Println("XXXXXXXXXXXXXXXXXX", msg)
 	_, err := bot.Send(msg)
 
 	return err
