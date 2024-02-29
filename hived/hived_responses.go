@@ -2,7 +2,7 @@ package main
 
 import "github.com/go-redis/redis/v8"
 
-type AlertHandler struct {
+type Handler struct {
 	rdb *redis.Client
 }
 

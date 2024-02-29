@@ -96,7 +96,7 @@ func TestAlertHandlerPhase1(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	recorder := httptest.NewRecorder()
-	alertHandler := AlertHandler{rdb: rdb}
+	alertHandler := Handler{rdb: rdb}
 	alertHandler.HandleAlertPost(recorder, req)
 	errorHandler(recorder, t, err)
 
@@ -128,7 +128,7 @@ func TestAlertHandlerPhase2(t *testing.T) {
 
 	req, err := http.NewRequest(http.MethodGet, endpoint+"/alert?key=alertTest", nil)
 	recorder := httptest.NewRecorder()
-	alertHandler := AlertHandler{rdb: rdb}
+	alertHandler := Handler{rdb: rdb}
 	alertHandler.HandleAlertGet(recorder, req)
 	errorHandler(recorder, t, err)
 
@@ -170,7 +170,7 @@ func TestAlertHandlerPhase3(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	recorder := httptest.NewRecorder()
-	alertHandler := AlertHandler{rdb: rdb}
+	alertHandler := Handler{rdb: rdb}
 	alertHandler.HandleAlertGet(recorder, req)
 	errorHandler(recorder, t, err)
 }
@@ -185,7 +185,7 @@ func TestAlertHandlerPhase4(t *testing.T) {
 
 	req, err := http.NewRequest(http.MethodGet, endpoint+"/alert?key=alertTest", nil)
 	recorder := httptest.NewRecorder()
-	alertHandler := AlertHandler{rdb: rdb}
+	alertHandler := Handler{rdb: rdb}
 	alertHandler.HandleAlertGet(recorder, req)
 	errorHandler(recorder, t, err)
 
@@ -217,7 +217,7 @@ func TestAlertHandlerPhase5(t *testing.T) {
 
 	req, err := http.NewRequest(http.MethodDelete, endpoint+"/alert?key=alertTest", nil)
 	recorder := httptest.NewRecorder()
-	alertHandler := AlertHandler{rdb: rdb}
+	alertHandler := Handler{rdb: rdb}
 	alertHandler.HandleAlertGet(recorder, req)
 	errorHandler(recorder, t, err)
 
@@ -250,7 +250,7 @@ func TestAlertHandlerPhase6(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, endpoint+"/alert?key=alertTest", nil)
 
 	recorder := httptest.NewRecorder()
-	alertHandler := AlertHandler{rdb: rdb}
+	alertHandler := Handler{rdb: rdb}
 	alertHandler.HandleAlertGet(recorder, req)
 	errorHandler(recorder, t, err)
 

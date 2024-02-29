@@ -37,6 +37,7 @@ const (
 	redisContextTimeout          = 2
 	pingTimeout                  = 5
 	alertCheckIntervalDefault    = 600
+	tickerCheckIntervalDefault   = 600
 	redisCacheDurationMultiplier = 1_000_000
 	cacheDurationdefault         = 300_000
 	telegramTimeout              = 10
@@ -139,19 +140,24 @@ func getPrice(ctx context.Context,
 	priceChan chan<- priceChanStruct,
 	errChan chan<- errorChanStruct,
 ) {
+	fmt.Println("zcheckpoint 1: ", name)
 	val, err := rdb.Get(ctx, name+"_price").Float64()
+	fmt.Println("zcheckpoint 2")
 
 	if err != nil {
+		fmt.Println("zcheckpoint 3: ", name)
 		source := chooseGetPriceSource()
 
 		if source == CryptoCompareSource {
 			getPriceFromCryptoCompare(ctx, name, unit, waitGroup, priceChan, errChan)
 		}
 	} else {
+		fmt.Println("zcheckpoint 4: ", name)
 		priceChan <- priceChanStruct{name: name, price: val}
 		errChan <- errorChanStruct{hasError: false, err: nil}
 		waitGroup.Done()
 	}
+	fmt.Println("zcheckpoint 5: ", name)
 }
 
 func getPriceFromCryptoCompareErrorHandler(
@@ -175,12 +181,14 @@ func getPriceFromCryptoCompare(
 	errChan chan<- errorChanStruct,
 ) {
 	defer wg.Done()
+	fmt.Println("xcheckpoint 1")
 
 	params := "fsym=" + url.QueryEscape(name) + "&" +
 		"tsyms=" + url.QueryEscape(unit)
 	path := cryptocomparePriceURL + params
 
 	client := GetProxiedClient()
+	fmt.Println("xcheckpoint 2")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -188,6 +196,7 @@ func getPriceFromCryptoCompare(
 
 		return
 	}
+	fmt.Println("xcheckpoint 3")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -196,6 +205,7 @@ func getPriceFromCryptoCompare(
 		return
 	}
 	defer resp.Body.Close()
+	fmt.Println("xcheckpoint 4")
 
 	jsonBody := make(map[string]float64)
 
@@ -204,12 +214,15 @@ func getPriceFromCryptoCompare(
 		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
 	}
 
+	fmt.Println("xcheckpoint 5")
+
 	// add a price cache
 	err = rdb.Set(ctx, name+"_price", jsonBody[unit], time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
 
 	if err != nil {
 		log.Error().Err(err)
 	}
+	fmt.Println("xcheckpoint 6")
 
 	priceChan <- priceChanStruct{name: name, price: jsonBody[unit]}
 	errChan <- errorChanStruct{hasError: false, err: nil}
@@ -405,6 +418,14 @@ type alertsType struct {
 	Alerts []alertType `json:"alerts"`
 }
 
+type tickerType struct {
+	Name string `json:"name"`
+}
+
+type tickersType struct {
+	Tickers []tickerType `json:"tickers"`
+}
+
 func getAlerts() alertsType {
 	var alerts alertsType
 
@@ -424,6 +445,24 @@ func getAlerts() alertsType {
 	}
 
 	return alerts
+}
+
+func getTickers() tickersType {
+	var tickers tickersType
+
+	ctx := context.Background()
+	keys := rdb.SMembersMap(ctx, "tickerkeys")
+	tickers.Tickers = make([]tickerType, len(keys.Val()))
+	vals := keys.Val()
+
+	tickerIndex := 0
+
+	for key := range vals {
+		tickers.Tickers[tickerIndex].Name = key[7:]
+		tickerIndex++
+	}
+
+	return tickers
 }
 
 // FIXME- there is a crash here
@@ -505,7 +544,6 @@ func alertManagerWorker(alert alertType) {
 	if err == nil {
 		log.Error().Err(err)
 	}
-
 	sendToTg("telebot:8000", msgText, tokenInt)
 }
 
@@ -523,184 +561,96 @@ func alertManager(alertsCheckInterval int64) {
 	}
 }
 
+func tickerManager(tickerCheckInterval int64) {
+	for {
+		tickers := getTickers()
+
+		log.Info().Msg(fmt.Sprintf("%v", tickers))
+
+		for tickerIndex := range tickers.Tickers {
+			go tickerManagerWorker(tickers.Tickers[tickerIndex])
+		}
+
+		time.Sleep(time.Second * time.Duration(tickerCheckInterval))
+	}
+}
+
+func tickerManagerWorker(ticker tickerType) {
+	var waitGroup sync.WaitGroup
+
+	priceChan := make(chan priceChanStruct, 1)
+	errChan := make(chan errorChanStruct, 1)
+
+	defer close(errChan)
+	defer close(priceChan)
+	waitGroup.Add(1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), getTimeout*time.Second)
+	defer cancel()
+
+	fmt.Println("checkpoint 1: ", ticker.Name)
+	go getPrice(ctx, ticker.Name, "USD", &waitGroup, priceChan, errChan)
+	fmt.Println("checkpoint 2")
+
+	waitGroup.Wait()
+	fmt.Println("checkpoint 3")
+
+	select {
+	case err := <-errChan:
+		if err.hasError {
+			log.Error().Err(err.err)
+		}
+	default:
+		log.Error().Err(errBadLogic)
+	}
+	fmt.Println("checkpoint 4")
+
+	var price priceChanStruct
+	select {
+	case priceCh := <-priceChan:
+		price = priceCh
+	default:
+		log.Error().Err(errBadLogic)
+	}
+	fmt.Println("checkpoint 5")
+
+	token := os.Getenv(telegramBotTokenEnvVar)
+	msgText := "ticker: " + ticker.Name + ":" + strconv.FormatFloat(price.price, 'f', -1, 64)
+	tokenInt, err := strconv.ParseInt(token[1:len(token)-1], 10, 64)
+
+	fmt.Println(msgText)
+
+	if err == nil {
+		log.Error().Err(err)
+	}
+	sendToTg("telebot:8000", msgText, tokenInt)
+}
+
 type addAlertJSONType struct {
 	Name string `json:"name"`
 	Expr string `json:"expr"`
 }
 
-func (alertHandler AlertHandler) HandleAlertPost(writer http.ResponseWriter, request *http.Request) {
-	var bodyJSON addAlertJSONType
-
-	writer.Header().Add("Content-Type", "application/json")
-
-	err := json.NewDecoder(request.Body).Decode(&bodyJSON)
-	if err != nil {
-		log.Printf(err.Error())
-
-		err := json.NewEncoder(writer).Encode(map[string]interface{}{
-			"isSuccessful": false,
-			"error":        "not all parameters are valid.",
-		})
-		if err != nil {
-			log.Error().Err(err)
-			http.Error(writer, "internal server error", http.StatusInternalServerError)
-		}
-	}
-
-	if bodyJSON.Name == "" || bodyJSON.Expr == "" {
-		err := json.NewEncoder(writer).Encode(map[string]interface{}{
-			"isSuccessful": false,
-			"error":        "not all parameters are valid.",
-		})
-		if err != nil {
-			log.Error().Err(errFailedUnmarshall)
-			http.Error(writer, "internal server error", http.StatusInternalServerError)
-		}
-
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(request.Context(), redisContextTimeout*time.Second)
-	defer cancel()
-
-	key := "alert:" + bodyJSON.Name
-	alertHandler.rdb.Set(ctx, bodyJSON.Name, bodyJSON.Expr, 0)
-	alertHandler.rdb.SAdd(ctx, "alertkeys", key)
-
-	err = json.NewEncoder(writer).Encode(map[string]interface{}{
-		"isSuccessful": true,
-		"error":        "",
-	})
-
-	if err != nil {
-		log.Error().Err(err)
-		http.Error(writer, "internal server error", http.StatusInternalServerError)
-	}
+type tickerJSONType struct {
+	Name string `json:"name"`
 }
 
-func (alertHandler AlertHandler) HandleAlertDelete(writer http.ResponseWriter, request *http.Request) {
-	var identifier string
-
-	writer.Header().Add("Content-Type", "application/json")
-
-	params := request.URL.Query()
-
-	for key, value := range params {
-		switch key {
-		case "key":
-			identifier = value[0]
-		default:
-			log.Error().Err(errUnknownParam)
-		}
-	}
-
-	if identifier == "" {
-		err := json.NewEncoder(writer).Encode(map[string]interface{}{
-			"isSuccessful": false,
-			"error":        "Id parameter is not valid.",
-		})
-		if err != nil {
-			log.Error().Err(err)
-			http.Error(writer, "internal server error", http.StatusInternalServerError)
-		}
-
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(request.Context(), redisContextTimeout*time.Second)
-	defer cancel()
-
-	alertHandler.rdb.Del(ctx, identifier)
-	setKey := "alert:" + identifier
-	alertHandler.rdb.SRem(ctx, "alertkeys", setKey)
-	log.Printf(setKey)
-
-	err := json.NewEncoder(writer).Encode(struct {
-		IsSuccessful bool   `json:"isSuccessful"`
-		Err          string `json:"err"`
-	}{IsSuccessful: true, Err: ""})
-	if err != nil {
-		log.Error().Err(err)
-		http.Error(writer, "internal server error", http.StatusInternalServerError)
-	}
-}
-
-func (alertHandler AlertHandler) HandleAlertGet(writer http.ResponseWriter, request *http.Request) {
-	var identifier string
-
-	writer.Header().Add("Content-Type", "application/json")
-
-	params := request.URL.Query()
-	for key, value := range params {
-		switch key {
-		case "key":
-			identifier = value[0]
-		default:
-			log.Error().Err(errUnknownParam)
-		}
-	}
-
-	if identifier == "" {
-		err := json.NewEncoder(writer).Encode(map[string]interface{}{
-			"isSuccessful": false,
-			"error":        "Id parameter is not valid.",
-		})
-		if err != nil {
-			log.Error().Err(err)
-			http.Error(writer, "internal server error", http.StatusInternalServerError)
-		}
-
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(request.Context(), redisContextTimeout*time.Second)
-	defer cancel()
-
-	redisResult := alertHandler.rdb.Get(ctx, identifier)
-
-	redisResultString, err := redisResult.Result()
-	if err != nil {
-		log.Err(err)
-	}
-
-	var ErrorString string
-	if err == nil {
-		ErrorString = ""
-	} else {
-		ErrorString = err.Error()
-	}
-
-	writer.Header().Add("Content-Type", "application/json")
-
-	err = json.NewEncoder(writer).Encode(struct {
-		IsSuccessful bool   `json:"isSuccessful"`
-		Error        string `json:"error"`
-		Key          string `json:"key"`
-		Expr         string `json:"expr"`
-	}{IsSuccessful: true, Error: ErrorString, Key: identifier, Expr: redisResultString})
-
-	if err != nil {
-		log.Error().Err(err)
-		http.Error(writer, "internal server error", http.StatusInternalServerError)
-	}
-}
-
-func alertHandler(writer http.ResponseWriter, request *http.Request) {
+func tickerHandler(writer http.ResponseWriter, request *http.Request) {
 	addSecureHeaders(&writer)
 
-	alertHandler := AlertHandler{rdb: rdb}
+	handler := Handler{rdb: rdb}
 
 	switch request.Method {
 	case http.MethodPost:
-		alertHandler.HandleAlertPost(writer, request)
+		handler.HandleTickerPost(writer, request)
 	case http.MethodPut:
-		alertHandler.HandleAlertPost(writer, request)
+		handler.HandleTickerPost(writer, request)
 	case http.MethodPatch:
-		alertHandler.HandleAlertPost(writer, request)
+		handler.HandleTickerPost(writer, request)
 	case http.MethodDelete:
-		alertHandler.HandleAlertDelete(writer, request)
+		handler.HandleTickerDelete(writer, request)
 	case http.MethodGet:
-		alertHandler.HandleAlertGet(writer, request)
+		handler.HandleTickerGet(writer, request)
 	default:
 		http.Error(writer, "Method is not supported.", http.StatusNotFound)
 	}
@@ -790,6 +740,7 @@ func startServer(gracefulWait time.Duration, flagPort string) {
 	router.HandleFunc("/crypto/v1/price", PriceHandler)
 	router.HandleFunc("/crypto/v1/pair", PairHandler)
 	router.HandleFunc("/crypto/v1/alert", alertHandler)
+	router.HandleFunc("/crypto/v1/ticker", tickerHandler)
 	router.HandleFunc("/crypto/v1/robots.txt", robotsHandler)
 
 	go func() {
@@ -841,6 +792,10 @@ func main() {
 		"alertinterval",
 		alertCheckIntervalDefault,
 		"in seconds, the amount of time between alert checks")
+	tickerCheckInterval := flag.Int64(
+		"interval",
+		tickerCheckIntervalDefault,
+		"in seconds, the amount of time between alert checks")
 
 	flag.DurationVar(
 		&gracefulWait, "gracefulwait",
@@ -859,6 +814,8 @@ func main() {
 	setupLogging()
 
 	go alertManager(*alertsCheckInterval)
+
+	go tickerManager(*tickerCheckInterval)
 
 	startServer(gracefulWait, *flagPort)
 }
