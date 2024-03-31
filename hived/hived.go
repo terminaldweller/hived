@@ -31,9 +31,9 @@ const (
 	serverDeploymentType         = "SERVER_DEPLOYMENT_TYPE"
 	httpClientTimeout            = 5
 	getTimeout                   = 5
-	serverTLSReadTimeout         = 15
-	serverTLSWriteTimeout        = 15
-	defaultGracefulShutdown      = 15
+	serverTLSReadTimeout         = 5
+	serverTLSWriteTimeout        = 5
+	defaultGracefulShutdown      = 5
 	redisContextTimeout          = 2
 	pingTimeout                  = 5
 	alertCheckIntervalDefault    = 600
@@ -140,24 +140,19 @@ func getPrice(ctx context.Context,
 	priceChan chan<- priceChanStruct,
 	errChan chan<- errorChanStruct,
 ) {
-	fmt.Println("zcheckpoint 1: ", name)
 	val, err := rdb.Get(ctx, name+"_price").Float64()
-	fmt.Println("zcheckpoint 2")
 
 	if err != nil {
-		fmt.Println("zcheckpoint 3: ", name)
 		source := chooseGetPriceSource()
 
 		if source == CryptoCompareSource {
 			getPriceFromCryptoCompare(ctx, name, unit, waitGroup, priceChan, errChan)
 		}
 	} else {
-		fmt.Println("zcheckpoint 4: ", name)
 		priceChan <- priceChanStruct{name: name, price: val}
 		errChan <- errorChanStruct{hasError: false, err: nil}
 		waitGroup.Done()
 	}
-	fmt.Println("zcheckpoint 5: ", name)
 }
 
 func getPriceFromCryptoCompareErrorHandler(
@@ -181,14 +176,12 @@ func getPriceFromCryptoCompare(
 	errChan chan<- errorChanStruct,
 ) {
 	defer wg.Done()
-	fmt.Println("xcheckpoint 1")
 
 	params := "fsym=" + url.QueryEscape(name) + "&" +
 		"tsyms=" + url.QueryEscape(unit)
 	path := cryptocomparePriceURL + params
 
 	client := GetProxiedClient()
-	fmt.Println("xcheckpoint 2")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -196,7 +189,6 @@ func getPriceFromCryptoCompare(
 
 		return
 	}
-	fmt.Println("xcheckpoint 3")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -205,7 +197,6 @@ func getPriceFromCryptoCompare(
 		return
 	}
 	defer resp.Body.Close()
-	fmt.Println("xcheckpoint 4")
 
 	jsonBody := make(map[string]float64)
 
@@ -214,15 +205,12 @@ func getPriceFromCryptoCompare(
 		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
 	}
 
-	fmt.Println("xcheckpoint 5")
-
 	// add a price cache
 	err = rdb.Set(ctx, name+"_price", jsonBody[unit], time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
 
 	if err != nil {
 		log.Error().Err(err)
 	}
-	fmt.Println("xcheckpoint 6")
 
 	priceChan <- priceChanStruct{name: name, price: jsonBody[unit]}
 	errChan <- errorChanStruct{hasError: false, err: nil}
@@ -588,12 +576,9 @@ func tickerManagerWorker(ticker tickerType) {
 	ctx, cancel := context.WithTimeout(context.Background(), getTimeout*time.Second)
 	defer cancel()
 
-	fmt.Println("checkpoint 1: ", ticker.Name)
 	go getPrice(ctx, ticker.Name, "USD", &waitGroup, priceChan, errChan)
-	fmt.Println("checkpoint 2")
 
 	waitGroup.Wait()
-	fmt.Println("checkpoint 3")
 
 	select {
 	case err := <-errChan:
@@ -603,7 +588,6 @@ func tickerManagerWorker(ticker tickerType) {
 	default:
 		log.Error().Err(errBadLogic)
 	}
-	fmt.Println("checkpoint 4")
 
 	var price priceChanStruct
 	select {
@@ -612,7 +596,6 @@ func tickerManagerWorker(ticker tickerType) {
 	default:
 		log.Error().Err(errBadLogic)
 	}
-	fmt.Println("checkpoint 5")
 
 	token := os.Getenv(telegramBotTokenEnvVar)
 	msgText := "ticker: " + ticker.Name + ":" + strconv.FormatFloat(price.price, 'f', -1, 64)
@@ -785,7 +768,7 @@ func main() {
 	var gracefulWait time.Duration
 
 	flagPort := flag.String("port", "8008", "determined the port the sercice runs on")
-	redisAddress := flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
+	redisAddress := flag.String("redisaddress", "keydb:6379", "determines the address of the redis instance")
 	redisPassword := flag.String("redispassword", "", "determines the password of the redis db")
 	redisDB := flag.Int64("redisdb", 0, "determines the db number")
 	alertsCheckInterval := flag.Int64(

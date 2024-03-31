@@ -1,4 +1,4 @@
-FROM alpine:3.18 as builder
+FROM alpine:3.19 as builder
 RUN apk update && apk upgrade
 RUN apk add go git
 COPY go.* /arbiter/
@@ -6,13 +6,13 @@ RUN cd /arbiter && go mod download
 COPY *.go /arbiter/
 RUN cd /arbiter && go build
 
-FROM alpine:3.18 as certbuilder
+FROM alpine:3.19 as certbuilder
 RUN apk add openssl
 WORKDIR /certs
 RUN openssl req -nodes -new -x509 -subj="/C=US/ST=Denial/L=springfield/O=Dis/CN=localhost" -keyout server.key -out server.cert
 
 # FROM gcr.io/distroless/static-debian10
-FROM alpine:3.18
+FROM alpine:3.19
 COPY --from=certbuilder /certs /certs
 COPY --from=builder /arbiter/arbiter /arbiter/
 ENTRYPOINT ["/arbiter/arbiter"]

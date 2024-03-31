@@ -5,8 +5,6 @@ services:
     build:
       context: ./hived
     secrets:
-      - ch_api_key
-      - ch_api_secret
       - tg_bot_token
     networks:
       - mainnet
@@ -15,7 +13,7 @@ services:
     ports:
       - "8007:8008"
     depends_on:
-      - redis
+      - keydb
       - telebot
     entrypoint: ["/hived/docker-entrypoint.sh"]
     volumes:
@@ -41,8 +39,8 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=deployment
-  redis:
-    image: redis:6.2-alpine
+  keydb:
+    image: eqalpha/keydb:alpine_x86_64_v6.3.4
     networks:
       - mainnet
     restart: unless-stopped
@@ -51,7 +49,7 @@ services:
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     volumes:
-      - redis-data:/data/
+      - keydb-data:/data/
   arbiter:
     image: arbiter
     build:
@@ -76,9 +74,5 @@ networks:
 secrets:
   tg_bot_token:
     file: ./tgtoken
-  ch_api_key:
-    file: ./changelly_api_key
-  ch_api_secret:
-    file: ./changelly_api_secret
 volumes:
-  redis-data:
+  keydb-data:
