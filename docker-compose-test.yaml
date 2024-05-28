@@ -20,7 +20,7 @@ services:
       - SERVER_DEPLOYMENT_TYPE=test
       - POLYGON_API_KEY=
       - HIVED_PRICE_SOURCE=cmc
-      - CMC_API_KEY=d941be62-d4da-426c-8dc3-7311b04dfa5f
+      - CMC_API_KEY=
   telebot:
     image: telebot
     build:
