@@ -18,6 +18,7 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
+      - POLYGON_API_KEY=
   telebot:
     image: telebot
     build:

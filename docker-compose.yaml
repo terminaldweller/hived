@@ -14,7 +14,7 @@ services:
     ports:
       - "8007:8008"
     depends_on:
-      - redis
+      - keydb
       - telebot
     entrypoint: ["/hived/docker-entrypoint.sh"]
     volumes:
@@ -41,8 +41,8 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=deployment
-  redis:
-    image: redis:6.2-alpine
+  keydb:
+    image: eqalpha/keydb:alpine_x86_64_v6.3.4
     networks:
       - mainnet
     restart: unless-stopped
@@ -52,8 +52,8 @@ services:
       - ALLOW_EMPTY_PASSWORD=yes
     volumes:
       - redis-data:/data/
-  keydb:
-    image: eqalpha/keydb:alpine_x86_64_v6.3.4
+  arbiter:
+    image: arbiter
     build:
       context: ./arbiter
     networks:
