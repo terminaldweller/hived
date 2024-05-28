@@ -27,6 +27,7 @@ import (
 
 const (
 	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
+	polygonCryptoTickerURL       = "https://api.polygon.io/v2/snapshot/locale/global/markets/crypto/tickers"
 	telegramBotTokenEnvVar       = "TELEGRAM_BOT_TOKEN" //nolint: gosec
 	serverDeploymentType         = "SERVER_DEPLOYMENT_TYPE"
 	httpClientTimeout            = 5
@@ -124,6 +125,7 @@ type errorChanStruct struct {
 
 const (
 	CryptoCompareSource = iota
+	PolygonSource
 	// CoinGeckoSource
 	// CoinCapSource
 )
@@ -131,7 +133,7 @@ const (
 // TODO-add more sources.
 // TODO-do a round robin.
 func chooseGetPriceSource() int {
-	return CryptoCompareSource
+	return PolygonSource
 }
 
 func getPrice(ctx context.Context,
@@ -140,24 +142,26 @@ func getPrice(ctx context.Context,
 	priceChan chan<- priceChanStruct,
 	errChan chan<- errorChanStruct,
 ) {
-	fmt.Println("zcheckpoint 1: ", name)
 	val, err := rdb.Get(ctx, name+"_price").Float64()
-	fmt.Println("zcheckpoint 2")
 
 	if err != nil {
-		fmt.Println("zcheckpoint 3: ", name)
 		source := chooseGetPriceSource()
 
-		if source == CryptoCompareSource {
+		switch source {
+		case CryptoCompareSource:
+			fmt.Println("one")
 			getPriceFromCryptoCompare(ctx, name, unit, waitGroup, priceChan, errChan)
+		case PolygonSource:
+			fmt.Println("two")
+			getPriceFromPolygon(ctx, name, unit, waitGroup, priceChan, errChan)
+		default:
+
 		}
 	} else {
-		fmt.Println("zcheckpoint 4: ", name)
 		priceChan <- priceChanStruct{name: name, price: val}
 		errChan <- errorChanStruct{hasError: false, err: nil}
 		waitGroup.Done()
 	}
-	fmt.Println("zcheckpoint 5: ", name)
 }
 
 func getPriceFromCryptoCompareErrorHandler(
@@ -181,14 +185,12 @@ func getPriceFromCryptoCompare(
 	errChan chan<- errorChanStruct,
 ) {
 	defer wg.Done()
-	fmt.Println("xcheckpoint 1")
 
 	params := "fsym=" + url.QueryEscape(name) + "&" +
 		"tsyms=" + url.QueryEscape(unit)
 	path := cryptocomparePriceURL + params
 
 	client := GetProxiedClient()
-	fmt.Println("xcheckpoint 2")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -196,7 +198,6 @@ func getPriceFromCryptoCompare(
 
 		return
 	}
-	fmt.Println("xcheckpoint 3")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -205,7 +206,6 @@ func getPriceFromCryptoCompare(
 		return
 	}
 	defer resp.Body.Close()
-	fmt.Println("xcheckpoint 4")
 
 	jsonBody := make(map[string]float64)
 
@@ -214,17 +214,69 @@ func getPriceFromCryptoCompare(
 		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
 	}
 
-	fmt.Println("xcheckpoint 5")
-
 	// add a price cache
 	err = rdb.Set(ctx, name+"_price", jsonBody[unit], time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
 
 	if err != nil {
 		log.Error().Err(err)
 	}
-	fmt.Println("xcheckpoint 6")
 
 	priceChan <- priceChanStruct{name: name, price: jsonBody[unit]}
+	errChan <- errorChanStruct{hasError: false, err: nil}
+}
+
+func getPriceFromPolygon(
+	ctx context.Context,
+	name, unit string,
+	wg *sync.WaitGroup,
+	priceChan chan<- priceChanStruct,
+	errChan chan<- errorChanStruct,
+) {
+	defer wg.Done()
+
+	apiKey := os.Getenv("POLYGON_API_KEY")
+
+	params := "/" + name + "?" +
+		"apiKey=" + url.QueryEscape(apiKey)
+	path := polygonCryptoTickerURL + params
+
+	log.Print(path)
+
+	client := GetProxiedClient()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
+
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
+
+		return
+	}
+	defer resp.Body.Close()
+
+	var jsonBody PolygonTickerResponse
+
+	err = json.NewDecoder(resp.Body).Decode(&jsonBody)
+	if err != nil {
+		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
+	}
+
+	log.Print(jsonBody)
+
+	price := jsonBody.Ticker.Min.O
+	// add a price cache
+	err = rdb.Set(ctx, name+"_price", price, time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
+
+	if err != nil {
+		log.Error().Err(err)
+	}
+
+	priceChan <- priceChanStruct{name: name, price: price}
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
@@ -588,12 +640,9 @@ func tickerManagerWorker(ticker tickerType) {
 	ctx, cancel := context.WithTimeout(context.Background(), getTimeout*time.Second)
 	defer cancel()
 
-	fmt.Println("checkpoint 1: ", ticker.Name)
 	go getPrice(ctx, ticker.Name, "USD", &waitGroup, priceChan, errChan)
-	fmt.Println("checkpoint 2")
 
 	waitGroup.Wait()
-	fmt.Println("checkpoint 3")
 
 	select {
 	case err := <-errChan:
@@ -603,7 +652,6 @@ func tickerManagerWorker(ticker tickerType) {
 	default:
 		log.Error().Err(errBadLogic)
 	}
-	fmt.Println("checkpoint 4")
 
 	var price priceChanStruct
 	select {
@@ -612,7 +660,6 @@ func tickerManagerWorker(ticker tickerType) {
 	default:
 		log.Error().Err(errBadLogic)
 	}
-	fmt.Println("checkpoint 5")
 
 	token := os.Getenv(telegramBotTokenEnvVar)
 	msgText := "ticker: " + ticker.Name + ":" + strconv.FormatFloat(price.price, 'f', -1, 64)

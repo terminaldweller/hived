@@ -1,12 +1,9 @@
-version: "3.4"
 services:
   hived:
     image: hived
     build:
       context: ./hived
     secrets:
-      - ch_api_key
-      - ch_api_secret
       - tg_bot_token
     networks:
       - mainnet
@@ -49,16 +46,16 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
-  redis:
-    image: redis:6.2-alpine
+  keydb:
+    image: eqalpha/keydb:alpine_x86_64_v6.3.4
     networks:
       - mainnet
     ports:
       - "6380:6379"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
-    volumes:
-      - redis-data:/data/
+    # volumes:
+    #   - redis-data:/data/
 networks:
   mainnet:
     driver: bridge
@@ -67,9 +64,5 @@ networks:
 secrets:
   tg_bot_token:
     file: ./tgtoken
-  ch_api_key:
-    file: ./changelly_api_key
-  ch_api_secret:
-    file: ./changelly_api_secret
 volumes:
   redis-data:
