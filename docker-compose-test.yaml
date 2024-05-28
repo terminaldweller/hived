@@ -11,7 +11,7 @@ services:
     ports:
       - "10008:8008"
     depends_on:
-      - redis
+      - keydb
       - telebot
     entrypoint: ["/hived/docker-entrypoint.sh"]
     cap_drop:
@@ -19,6 +19,8 @@ services:
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
       - POLYGON_API_KEY=
+      - HIVED_PRICE_SOURCE=cmc
+      - CMC_API_KEY=d941be62-d4da-426c-8dc3-7311b04dfa5f
   telebot:
     image: telebot
     build:
@@ -56,7 +58,7 @@ services:
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     # volumes:
-    #   - redis-data:/data/
+    #   - keydb-data:/data/
 networks:
   mainnet:
     driver: bridge
@@ -66,4 +68,4 @@ secrets:
   tg_bot_token:
     file: ./tgtoken
 volumes:
-  redis-data:
+  keydb-data:

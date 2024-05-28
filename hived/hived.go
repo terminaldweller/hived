@@ -28,6 +28,7 @@ import (
 const (
 	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
 	polygonCryptoTickerURL       = "https://api.polygon.io/v2/snapshot/locale/global/markets/crypto/tickers"
+	cmcCryptoTickerURL           = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest"
 	telegramBotTokenEnvVar       = "TELEGRAM_BOT_TOKEN" //nolint: gosec
 	serverDeploymentType         = "SERVER_DEPLOYMENT_TYPE"
 	httpClientTimeout            = 5
@@ -121,21 +122,6 @@ type errorChanStruct struct {
 	err      error
 }
 
-// type APISource int
-
-const (
-	CryptoCompareSource = iota
-	PolygonSource
-	// CoinGeckoSource
-	// CoinCapSource
-)
-
-// TODO-add more sources.
-// TODO-do a round robin.
-func chooseGetPriceSource() int {
-	return PolygonSource
-}
-
 func getPrice(ctx context.Context,
 	name, unit string,
 	waitGroup *sync.WaitGroup,
@@ -145,21 +131,20 @@ func getPrice(ctx context.Context,
 	val, err := rdb.Get(ctx, name+"_price").Float64()
 
 	if err != nil {
-		source := chooseGetPriceSource()
+		source := os.Getenv("HIVED_PRICE_SOURCE")
 
 		switch source {
-		case CryptoCompareSource:
-			fmt.Println("one")
+		case "cryptocompare":
 			getPriceFromCryptoCompare(ctx, name, unit, waitGroup, priceChan, errChan)
-		case PolygonSource:
-			fmt.Println("two")
+		case "polygon":
 			getPriceFromPolygon(ctx, name, unit, waitGroup, priceChan, errChan)
-		default:
-
+		case "cmc":
+			getPriceFromCMC(ctx, name, unit, waitGroup, priceChan, errChan)
 		}
 	} else {
 		priceChan <- priceChanStruct{name: name, price: val}
 		errChan <- errorChanStruct{hasError: false, err: nil}
+
 		waitGroup.Done()
 	}
 }
@@ -270,6 +255,65 @@ func getPriceFromPolygon(
 
 	price := jsonBody.Ticker.Min.O
 	// add a price cache
+	err = rdb.Set(ctx, name+"_price", price, time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
+
+	if err != nil {
+		log.Error().Err(err)
+	}
+
+	priceChan <- priceChanStruct{name: name, price: price}
+	errChan <- errorChanStruct{hasError: false, err: nil}
+}
+
+func getPriceFromCMC(
+	ctx context.Context,
+	name, unit string,
+	wg *sync.WaitGroup,
+	priceChan chan<- priceChanStruct,
+	errChan chan<- errorChanStruct,
+) {
+	defer wg.Done()
+
+	apiKey := os.Getenv("CMC_API_KEY")
+
+	params := "?slug=" + name
+	path := cmcCryptoTickerURL + params
+
+	log.Print(path)
+
+	client := GetProxiedClient()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
+
+		return
+	}
+
+	req.Header.Set("X-CMC_PRO_API_KEY", apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
+
+		return
+	}
+	defer resp.Body.Close()
+
+	var jsonBody CMCTickerResponseType
+
+	err = json.NewDecoder(resp.Body).Decode(&jsonBody)
+	if err != nil {
+		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
+	}
+
+	log.Print(jsonBody)
+
+	var price float64
+	for _, v := range jsonBody.Data {
+		price = v.Quote["USD"].Price
+	}
+
 	err = rdb.Set(ctx, name+"_price", price, time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
 
 	if err != nil {
