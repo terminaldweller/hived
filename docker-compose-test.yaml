@@ -1,15 +1,78 @@
 services:
+  auth:
+    image: auth
+    build:
+      context: ./auth
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+    networks:
+      - authnet
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:8090"
+    depends_on:
+      - nginx
+    volumes:
+      - pb-vault:/auth/pb_data
+    cap_drop:
+      - ALL
+    environment:
+      - SERVER_DEPLOYMENT_TYPE=deployment
+    entrypoint: ["/auth/auth"]
+    command: ["serve", "--http=0.0.0.0:8090"]
+  nginx:
+    image: nginx:stable
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+    ports:
+      - "127.0.0.1:8090:443"
+    networks:
+      - authnet
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    volumes:
+      - ./auth/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ss_certs/server.cert:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:ro
+      - ./ss_certs/server.key:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:ro
   hived:
     image: hived
     build:
       context: ./hived
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
     secrets:
       - tg_bot_token
     networks:
-      - mainnet
+      - apinet
+      - dbnet
       - telenet
     ports:
-      - "10008:8008"
+      - "127.0.0.1:10008:8008"
     depends_on:
       - keydb
       - telebot
@@ -18,19 +81,27 @@ services:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
-      - POLYGON_API_KEY=
       - HIVED_PRICE_SOURCE=cmc
       - CMC_API_KEY=
+      - POLYGON_API_KEY=
   telebot:
     image: telebot
     build:
       context: ./telebot
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
     secrets:
       - tg_bot_token
     networks:
       - telenet
     ports:
-      - "10009:8000"
+      - "127.0.0.1:10009:8000"
     entrypoint: ["/telebot/docker-entrypoint.sh"]
     cap_drop:
       - ALL
@@ -40,10 +111,20 @@ services:
     image: arbiter
     build:
       context: ./arbiter
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
     networks:
-      - mainnet
+      - apinet
+      - dbnet
+      - telenet
     ports:
-      - "8009:8009"
+      - "127.0.0.1:8009:8009"
     entrypoint: ["/arbiter/arbiter"]
     cap_drop:
       - ALL
@@ -51,21 +132,34 @@ services:
       - SERVER_DEPLOYMENT_TYPE=test
   keydb:
     image: eqalpha/keydb:alpine_x86_64_v6.3.4
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
     networks:
-      - mainnet
+      - dbnet
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     # volumes:
     #   - keydb-data:/data/
 networks:
-  mainnet:
-    driver: bridge
+  authnet:
+  dbnet:
   telenet:
-    driver: bridge
+  apinet:
 secrets:
   tg_bot_token:
     file: ./tgtoken
+  polygon_api_key:
+    file: ./polygon_api_key
+  cmc_api_key:
+    file: ./cmc_api_key
 volumes:
   keydb-data:
+  pb-vault:

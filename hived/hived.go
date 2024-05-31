@@ -137,9 +137,9 @@ func getPrice(ctx context.Context,
 		case "cryptocompare":
 			getPriceFromCryptoCompare(ctx, name, unit, waitGroup, priceChan, errChan)
 		case "polygon":
-			getPriceFromPolygon(ctx, name, unit, waitGroup, priceChan, errChan)
+			getPriceFromPolygon(ctx, name, waitGroup, priceChan, errChan)
 		case "cmc":
-			getPriceFromCMC(ctx, name, unit, waitGroup, priceChan, errChan)
+			getPriceFromCMC(ctx, name, waitGroup, priceChan, errChan)
 		}
 	} else {
 		priceChan <- priceChanStruct{name: name, price: val}
@@ -159,7 +159,7 @@ func getPriceFromCryptoCompareErrorHandler(
 	priceChan <- priceChanStruct{name: name, price: defaultPrice}
 	errChan <- errorChanStruct{hasError: true, err: err}
 
-	log.Error().Err(err)
+	log.Error().Err(err).Send()
 }
 
 func getPriceFromCryptoCompare(
@@ -184,6 +184,10 @@ func getPriceFromCryptoCompare(
 		return
 	}
 
+	apiKey := os.Getenv("CRYPTOCOMPARE_API_KEY")
+
+	req.Header.Set("Apikey", apiKey)
+
 	resp, err := client.Do(req)
 	if err != nil {
 		getPriceFromCryptoCompareErrorHandler(err, name, priceChan, errChan)
@@ -201,7 +205,6 @@ func getPriceFromCryptoCompare(
 
 	// add a price cache
 	err = rdb.Set(ctx, name+"_price", jsonBody[unit], time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
-
 	if err != nil {
 		log.Error().Err(err)
 	}
@@ -212,7 +215,7 @@ func getPriceFromCryptoCompare(
 
 func getPriceFromPolygon(
 	ctx context.Context,
-	name, unit string,
+	name string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
 	errChan chan<- errorChanStruct,
@@ -254,9 +257,9 @@ func getPriceFromPolygon(
 	log.Print(jsonBody)
 
 	price := jsonBody.Ticker.Min.O
+
 	// add a price cache
 	err = rdb.Set(ctx, name+"_price", price, time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
-
 	if err != nil {
 		log.Error().Err(err)
 	}
@@ -267,7 +270,7 @@ func getPriceFromPolygon(
 
 func getPriceFromCMC(
 	ctx context.Context,
-	name, unit string,
+	name string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
 	errChan chan<- errorChanStruct,
@@ -315,7 +318,6 @@ func getPriceFromCMC(
 	}
 
 	err = rdb.Set(ctx, name+"_price", price, time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
-
 	if err != nil {
 		log.Error().Err(err)
 	}
@@ -448,8 +450,8 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 
 	var waitGroup sync.WaitGroup
 
-	priceChan := make(chan priceChanStruct, 2) //nolint: gomnd
-	errChan := make(chan errorChanStruct, 2)   //nolint: gomnd
+	priceChan := make(chan priceChanStruct, 2) //nolint: mnd,gomnd
+	errChan := make(chan errorChanStruct, 2)   //nolint: mnd,gomnd
 
 	defer close(priceChan)
 	defer close(errChan)
@@ -457,14 +459,14 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), getTimeout*time.Second)
 	defer cancel()
 
-	waitGroup.Add(2) //nolint: gomnd
+	waitGroup.Add(2) //nolint: mnd,gomnd
 
 	go getPrice(ctx, one, "USD", &waitGroup, priceChan, errChan)
 	go getPrice(ctx, two, "USD", &waitGroup, priceChan, errChan)
 
 	waitGroup.Wait()
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case err := <-errChan:
 			if err.hasError {
@@ -479,7 +481,7 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 
 	var priceTwo float64
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case price := <-priceChan:
 			if price.name == one {
@@ -500,7 +502,7 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = json.NewEncoder(w).Encode(map[string]interface{}{"ratio": ratio})
 	if err != nil {
-		log.Error().Err(err)
+		log.Error().Err(err).Send()
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -561,7 +563,6 @@ func getTickers() tickersType {
 	return tickers
 }
 
-// FIXME- there is a crash here
 func alertManagerWorker(alert alertType) {
 	expression, err := govaluate.NewEvaluableExpression(alert.Expr)
 	if err != nil {
@@ -590,18 +591,18 @@ func alertManagerWorker(alert alertType) {
 
 	waitGroup.Wait()
 
-	for i := 0; i < len(vars); i++ {
+	for range len(vars) {
 		select {
 		case err := <-errChan:
 			if err.hasError {
 				log.Printf(err.err.Error())
 			}
 		default:
-			log.Error().Err(errBadLogic)
+			log.Error().Err(errBadLogic).Send()
 		}
 	}
 
-	for i := 0; i < len(vars); i++ {
+	for range len(vars) {
 		select {
 		case price := <-priceChan:
 			parameters[price.name] = price.price
@@ -640,6 +641,7 @@ func alertManagerWorker(alert alertType) {
 	if err == nil {
 		log.Error().Err(err)
 	}
+
 	sendToTg("telebot:8000", msgText, tokenInt)
 }
 
@@ -709,11 +711,12 @@ func tickerManagerWorker(ticker tickerType) {
 	msgText := "ticker: " + ticker.Name + ":" + strconv.FormatFloat(price.price, 'f', -1, 64)
 	tokenInt, err := strconv.ParseInt(token[1:len(token)-1], 10, 64)
 
-	fmt.Println(msgText)
+	log.Print(msgText)
 
 	if err == nil {
 		log.Error().Err(err)
 	}
+
 	sendToTg("telebot:8000", msgText, tokenInt)
 }
 
@@ -799,7 +802,7 @@ func healthHandler(writer http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func robotsHandler(writer http.ResponseWriter, r *http.Request) {
+func robotsHandler(writer http.ResponseWriter, _ *http.Request) {
 	writer.Header().Add("Content-Type", "text/plain")
 	addSecureHeaders(&writer)
 
@@ -849,7 +852,7 @@ func startServer(gracefulWait time.Duration, flagPort string) {
 		}
 
 		if err := srv.ListenAndServeTLS(certPath, keyPath); err != nil {
-			log.Fatal().Err(err)
+			log.Fatal().Err(err).Send()
 		}
 	}()
 

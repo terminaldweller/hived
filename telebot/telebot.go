@@ -17,10 +17,9 @@ import (
 	"google.golang.org/grpc"
 )
 
-// FIXME-the client should provide the channel ID.
 var botChannelID = flag.Int64(
 	"botchannelid",
-	146328407, //nolint: gomnd
+	146328407, //nolint: mnd,gomnd
 	"determines the channel id the telgram bot should send messages to")
 
 const (
@@ -34,6 +33,7 @@ type server struct {
 
 func GetProxiedClient() (*http.Client, error) {
 	var isProxied bool
+
 	proxyURL := os.Getenv("ALL_PROXY")
 	if proxyURL == "" {
 		proxyURL = os.Getenv("HTTPS_PROXY")
@@ -43,19 +43,22 @@ func GetProxiedClient() (*http.Client, error) {
 		isProxied = false
 	}
 
-	var dialer_proxy proxy.Dialer
+	var dialerProxy proxy.Dialer
+
 	var dialer net.Dialer
+
 	var err error
 
 	if isProxied {
-		dialer_proxy, err = proxy.SOCKS5("tcp", proxyURL, nil, proxy.Direct)
+		dialerProxy, err = proxy.SOCKS5("tcp", proxyURL, nil, proxy.Direct)
 		if err != nil {
 			return nil, fmt.Errorf("[GetProxiedClient] : %w", err)
 		}
 	} else {
 		dialer = net.Dialer{
-			Timeout: 5 * time.Second,
+			Timeout: 5 * time.Second, //nolint: mnd,gomnd
 		}
+
 		if err != nil {
 			return nil, fmt.Errorf("[GetProxiedClient] : %w", err)
 		}
@@ -63,7 +66,7 @@ func GetProxiedClient() (*http.Client, error) {
 
 	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
 		if isProxied {
-			netConn, err := dialer_proxy.Dial(network, address)
+			netConn, err := dialerProxy.Dial(network, address)
 			if err == nil {
 				return netConn, nil
 			}
@@ -104,7 +107,7 @@ func getTGBot() *tgbotapi.BotAPI {
 	// bot, err := tgbotapi.NewBotAPIWithClient(token[1:len(token)-1], client)
 	bot, err := tgbotapi.NewBotAPI(token[1 : len(token)-1])
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().Err(err).Send()
 	}
 
 	return bot
@@ -141,7 +144,7 @@ func (s *server) Notify(
 func startServer(port uint16) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().Err(err).Send()
 	}
 
 	var opts []grpc.ServerOption
@@ -150,7 +153,7 @@ func startServer(port uint16) {
 	pb.RegisterNotificationServiceServer(grpcServer, &server{})
 
 	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().Err(err).Send()
 	}
 }
 

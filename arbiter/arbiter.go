@@ -83,7 +83,7 @@ type errorChanStruct struct {
 	err      error
 }
 
-func GetProxiedClient() (*http.Client, error) {
+func GetProxiedClient() *http.Client {
 	transport := &http.Transport{
 		DisableKeepAlives: true,
 		Proxy:             http.ProxyFromEnvironment,
@@ -95,7 +95,7 @@ func GetProxiedClient() (*http.Client, error) {
 		Jar:           nil,
 	}
 
-	return client, nil
+	return client
 }
 
 // OWASP: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
@@ -107,22 +107,6 @@ func addSecureHeaders(writer *http.ResponseWriter) {
 	(*writer).Header().Set("X-Frame-Options", "DENY")
 	(*writer).Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 }
-
-// get price from binance.
-// func getPriceFromBinance(name, unit string,
-// 	wg *sync.WaitGroup,
-// 	priceChan chan<- priceChanStruct,
-// 	errChan chan<- errorChanStruct) {
-
-// }
-
-// get price from kucoin.
-// func getPriceFromKu(name, uni string,
-// 	wg *sync.WaitGroup,
-// 	priceChan chan<- priceChanStruct,
-// 	errChan chan<- errorChanStruct) {
-
-// }
 
 func getPriceFromCoinGecko(
 	ctx context.Context,
@@ -139,15 +123,7 @@ func getPriceFromCoinGecko(
 		"vs_currencies=" + url.QueryEscape(unit)
 	path := coingeckoAPIURLv3 + params
 
-	client, err := GetProxiedClient()
-	if err != nil {
-		priceChan <- priceChanStruct{name: name, price: priceFloat}
-		errChan <- errorChanStruct{hasError: true, err: err}
-
-		log.Error().Err(err)
-
-		return
-	}
+	client := GetProxiedClient()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -164,7 +140,7 @@ func getPriceFromCoinGecko(
 		priceChan <- priceChanStruct{name: name, price: priceFloat}
 		errChan <- errorChanStruct{hasError: true, err: err}
 
-		log.Error().Err(err)
+		log.Error().Err(err).Send()
 
 		return
 	}
@@ -175,7 +151,7 @@ func getPriceFromCoinGecko(
 		priceChan <- priceChanStruct{name: name, price: priceFloat}
 		errChan <- errorChanStruct{hasError: true, err: err}
 
-		log.Error().Err(err)
+		log.Error().Err(err).Send()
 	}
 
 	jsonBody := make(map[string]interface{})
@@ -185,7 +161,7 @@ func getPriceFromCoinGecko(
 		priceChan <- priceChanStruct{name: name, price: priceFloat}
 		errChan <- errorChanStruct{hasError: true, err: err}
 
-		log.Error().Err(err)
+		log.Error().Err(err).Send()
 	}
 
 	price, isOk := jsonBody[name].(map[string]interface{})
@@ -216,7 +192,7 @@ func getPriceFromCoinGecko(
 
 func getPriceFromCoinCap(
 	ctx context.Context,
-	name, unit string,
+	name string,
 	wg *sync.WaitGroup,
 	priceChan chan<- priceChanStruct,
 	errChan chan<- errorChanStruct,
@@ -228,15 +204,7 @@ func getPriceFromCoinCap(
 	params := "/assets/" + url.QueryEscape(name)
 	path := coincapAPIURLv2 + params
 
-	client, err := GetProxiedClient()
-	if err != nil {
-		priceChan <- priceChanStruct{name: name, price: priceFloat}
-		errChan <- errorChanStruct{hasError: true, err: err}
-
-		log.Error().Err(err)
-
-		return
-	}
+	client := GetProxiedClient()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -253,7 +221,7 @@ func getPriceFromCoinCap(
 		priceChan <- priceChanStruct{name: name, price: priceFloat}
 		errChan <- errorChanStruct{hasError: true, err: err}
 
-		log.Error().Err(err)
+		log.Error().Err(err).Send()
 
 		return
 	}
@@ -274,7 +242,7 @@ func getPriceFromCoinCap(
 		priceChan <- priceChanStruct{name: name, price: priceFloat}
 		errChan <- errorChanStruct{hasError: true, err: err}
 
-		log.Error().Err(err)
+		log.Error().Err(err).Send()
 	}
 
 	priceFloat, err = strconv.ParseFloat(coinCapAssetGetResponse.Data.PriceUsd, 64)
@@ -282,7 +250,7 @@ func getPriceFromCoinCap(
 		priceChan <- priceChanStruct{name: name, price: priceFloat}
 		errChan <- errorChanStruct{hasError: true, err: err}
 
-		log.Error().Err(err)
+		log.Error().Err(err).Send()
 	}
 
 	log.Info().Msg(string(body))
@@ -336,7 +304,7 @@ func arbHandler(w http.ResponseWriter, r *http.Request) {
 			log.Error().Err(err.err)
 		}
 	default:
-		log.Error().Err(errBadLogic)
+		log.Error().Err(errBadLogic).Send()
 	}
 
 	var price priceChanStruct
@@ -380,17 +348,13 @@ func coincapHandler(w http.ResponseWriter, r *http.Request) {
 
 	var name string
 
-	var unit string
-
 	params := r.URL.Query()
 	for key, value := range params {
 		switch key {
 		case "name":
 			name = value[0]
-		case "unit":
-			unit = value[0]
 		default:
-			log.Error().Err(errUnexpectedParam)
+			log.Error().Err(errUnexpectedParam).Send()
 		}
 	}
 
@@ -404,8 +368,7 @@ func coincapHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), getTimeout*time.Second)
 	defer cancel()
 
-	//nolint:contextcheck
-	getPriceFromCoinCap(ctx, name, unit, &waitGroup, priceChan, errChan)
+	getPriceFromCoinCap(ctx, name, &waitGroup, priceChan, errChan)
 	waitGroup.Wait()
 
 	select {
@@ -436,8 +399,8 @@ func coincapHandler(w http.ResponseWriter, r *http.Request) {
 	jsonResp, err := json.Marshal(responseData)
 	if err != nil {
 		cancel()
-		//nolint:gocritic
-		log.Fatal().Err(err)
+
+		log.Fatal().Err(err).Send()
 	}
 
 	_, err = w.Write(jsonResp)
@@ -468,7 +431,7 @@ func startServer(gracefulWait time.Duration,
 		TLSConfig:    cfg,
 	}
 
-	for i := 0; i < len(handlers); i++ {
+	for i := range len(handlers) {
 		route.HandleFunc(handlers[i].name, handlers[i].function)
 	}
 
@@ -483,7 +446,7 @@ func startServer(gracefulWait time.Duration,
 			certPath = "/certs/server.cert"
 			keyPath = "/certs/server.key"
 		default:
-			log.Error().Err(errUnknownDeployment)
+			log.Error().Err(errUnknownDeployment).Send()
 		}
 
 		if err := srv.ListenAndServeTLS(certPath, keyPath); err != nil {

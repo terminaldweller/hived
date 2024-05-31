@@ -4,8 +4,6 @@ services:
     build:
       context: ./hived
     secrets:
-      - ch_api_key
-      - ch_api_secret
       - tg_bot_token
     networks:
       - mainnet
@@ -25,6 +23,8 @@ services:
     environment:
       - SERVER_DEPLOYMENT_TYPE=deployment
       - POLYGON_API_KEY=
+      - CRYPTOCOMPARE_API_KEY=
+      - HIVED_PRICE_SOURCE= 
   telebot:
     image: telebot
     build:
@@ -76,9 +76,5 @@ networks:
 secrets:
   tg_bot_token:
     file: ./tgtoken
-  ch_api_key:
-    file: ./changelly_api_key
-  ch_api_secret:
-    file: ./changelly_api_secret
 volumes:
   redis-data:

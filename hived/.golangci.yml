@@ -1,0 +1,22 @@
+run:
+  concurrency: 16
+  timeout: 5m
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+  allow-serial-runners: true
+  go: '1.22'
+linters-settings:
+  depguard:
+    rules:
+      srcs:
+        listMode: "Strict"
+        allow:
+        - $gostd
+        - github.com/Knetic/govaluate
+        - github.com/go-redis/redis/v8
+        - github.com/gorilla/mux
+        - github.com/rs/zerolog
+        - github.com/rs/zerolog/log
+        - github.com/terminaldweller/grpc/telebot/v1
+        - google.golang.org/grpc
+        - google.golang.org/protobuf/types/known/timestamppb
