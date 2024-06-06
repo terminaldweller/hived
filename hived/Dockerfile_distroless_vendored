@@ -1,0 +1,10 @@
+FROM golang:1.22-alpine3.20 as builder
+WORKDIR /hived
+COPY go.sum go.mod /hived/
+COPY vendor /hived/vendor
+COPY *.go /hived/
+RUN go build
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /hived/hived "/usr/bin/hived"
+ENTRYPOINT ["hived"]
