@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/labstack/echo/v5"
 	"github.com/rs/zerolog/log"
 )
 
@@ -166,7 +167,10 @@ func (alertHandler Handler) HandleAlertGet(writer http.ResponseWriter, request *
 	}
 }
 
-func alertHandler(writer http.ResponseWriter, request *http.Request) {
+func (aw appWrapper) alertHandler(echoCtx echo.Context) error {
+	writer := echoCtx.Response().Writer
+	request := echoCtx.Request()
+
 	addSecureHeaders(&writer)
 
 	handler := Handler{rdb: rdb}
@@ -185,4 +189,6 @@ func alertHandler(writer http.ResponseWriter, request *http.Request) {
 	default:
 		http.Error(writer, "Method is not supported.", http.StatusNotFound)
 	}
+
+	return nil
 }

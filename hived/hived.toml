@@ -1,0 +1,7 @@
+keydbAddress = "keydb:6379"
+keydbPassword = ""
+keydbDB = 0
+alertsCheckInterval = 600
+tickerCheckInterval = 600
+cacheDuration = 600
+telegramChannelID = 

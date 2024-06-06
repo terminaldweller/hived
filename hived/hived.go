@@ -2,35 +2,41 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/Knetic/govaluate"
 	"github.com/go-redis/redis/v8"
-	"github.com/gorilla/mux"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/labstack/echo/v5"
+	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/apis"
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/plugins/ghupdate"
+	"github.com/pocketbase/pocketbase/plugins/jsvm"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	pb "github.com/terminaldweller/grpc/telebot/v1"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
 	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
 	polygonCryptoTickerURL       = "https://api.polygon.io/v2/snapshot/locale/global/markets/crypto/tickers"
 	cmcCryptoTickerURL           = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest"
-	telegramBotTokenEnvVar       = "TELEGRAM_BOT_TOKEN" //nolint: gosec
-	serverDeploymentType         = "SERVER_DEPLOYMENT_TYPE"
+	coingeckoAPIURLv3            = "https://api.coingecko.com/api/v3"
+	coincapAPIURLv2              = "https://api.coincap.io/v2"
 	httpClientTimeout            = 5
 	getTimeout                   = 5
 	serverTLSReadTimeout         = 15
@@ -61,6 +67,86 @@ var (
 	errUnknownDeploymentKind = errors.New("unknown deployment kind")
 )
 
+type HivedConfig struct {
+	KeydbAddress        string `toml:"keydbAddress"`
+	KeydbPassword       string `toml:"keydbPassword"`
+	KeydbDB             int    `toml:"keydbDB"`
+	AlertsCheckInterval int64  `toml:"alertsCheckInterval"`
+	TickerCheckInterval int64  `toml:"tickerCheckInterval"`
+	CacheDuration       int64  `toml:"cacheDuration"`
+	TelegramChannelID   int64  `toml:"telegramChannelID"`
+}
+
+type appWrapper struct {
+	app *pocketbase.PocketBase
+}
+
+// https://docs.coincap.io/
+type CoinCapAssetGetResponseData struct {
+	ID                string `json:"id"`
+	Rank              string `json:"rank"`
+	Symbol            string `json:"symbol"`
+	Name              string `json:"name"`
+	Supply            string `json:"supply"`
+	MaxSupply         string `json:"maxSupply"`
+	MarketCapUsd      string `json:"marketCapUsd"`
+	VolumeUsd24Hr     string `json:"volumeUsd24Hr"`
+	PriceUsd          string `json:"priceUsd"`
+	ChangePercent24Hr string `json:"changePercent24Hr"`
+	Vwap24Hr          string `json:"vwap24Hr"`
+}
+
+type RootCmds struct {
+	hooksDir      string
+	hooksWatch    bool
+	hooksPool     int
+	hooksPoolSize int
+	migrationsDir string
+	automigrate   bool
+	publicDir     string
+	indexFallback bool
+	queryTimeout  int
+}
+
+type priceResponseData struct {
+	Name         string  `json:"name"`
+	Price        float64 `json:"price"`
+	Unit         string  `json:"unit"`
+	Err          string  `json:"err"`
+	IsSuccessful bool    `json:"isSuccessful"`
+}
+
+type CoinCapAssetGetResponse struct {
+	Data      CoinCapAssetGetResponseData `json:"data"`
+	TimeStamp int64                       `json:"timestamp"`
+}
+
+type HTTPHandlerFunc func(http.ResponseWriter, *http.Request)
+
+type HTTPHandler struct {
+	name     string
+	function HTTPHandlerFunc
+}
+
+func getTGBot() *tgbotapi.BotAPI {
+	token := os.Getenv("TELEGRAM_BOT_TOKEN")
+	fmt.Println("YYY:", token)
+
+	bot, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+
+	return bot
+}
+
+func sendMessage(bot *tgbotapi.BotAPI, msgText string, channelID int64) error {
+	msg := tgbotapi.NewMessage(channelID, msgText)
+	_, err := bot.Send(msg)
+
+	return err
+}
+
 func GetProxiedClient() *http.Client {
 	transport := &http.Transport{
 		DisableKeepAlives: true,
@@ -86,30 +172,13 @@ func addSecureHeaders(writer *http.ResponseWriter) {
 	(*writer).Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 }
 
-func sendToTg(address, msg string, channelID int64) {
-	conn, err := grpc.Dial(address, grpc.WithInsecure())
+func sendToTg(msg string, channelID int64) {
+	tgbotapi := getTGBot()
+
+	err := sendMessage(tgbotapi, msg, channelID)
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Info().Err(err)
 	}
-	defer conn.Close()
-
-	c := pb.NewNotificationServiceClient(conn)
-
-	ctx, cancel := context.WithTimeout(context.Background(), telegramTimeout*time.Second)
-	defer cancel()
-
-	response, err := c.Notify(
-		ctx,
-		&pb.NotificationRequest{
-			NotificationText: msg,
-			ChannelId:        channelID,
-			RequestTime:      timestamppb.Now(),
-		})
-	if err != nil {
-		log.Error().Err(err)
-	}
-
-	log.Info().Msg(fmt.Sprintf("%v", response))
 }
 
 type priceChanStruct struct {
@@ -174,6 +243,8 @@ func getPriceFromCryptoCompare(
 	params := "fsym=" + url.QueryEscape(name) + "&" +
 		"tsyms=" + url.QueryEscape(unit)
 	path := cryptocomparePriceURL + params
+
+	log.Print(path)
 
 	client := GetProxiedClient()
 
@@ -326,7 +397,160 @@ func getPriceFromCMC(
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
-func PriceHandler(writer http.ResponseWriter, request *http.Request) {
+func GetPriceFromCoinGecko(
+	ctx context.Context,
+	name, unit string,
+	wg *sync.WaitGroup,
+	priceChan chan<- priceChanStruct,
+	errChan chan<- errorChanStruct,
+) {
+	defer wg.Done()
+
+	priceFloat := 0.
+
+	params := "/simple/price?ids=" + url.QueryEscape(name) + "&" +
+		"vs_currencies=" + url.QueryEscape(unit)
+	path := coingeckoAPIURLv3 + params
+
+	client := GetProxiedClient()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err)
+
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err).Send()
+
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err).Send()
+	}
+
+	jsonBody := make(map[string]interface{})
+
+	err = json.Unmarshal(body, &jsonBody)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err).Send()
+	}
+
+	price, isOk := jsonBody[name].(map[string]interface{})
+	if !isOk {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err)
+
+		return
+	}
+
+	log.Info().Msg(string(body))
+
+	priceFloat, isOk = price[unit].(float64)
+	if !isOk {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err)
+
+		return
+	}
+
+	priceChan <- priceChanStruct{name: name, price: priceFloat}
+	errChan <- errorChanStruct{hasError: false, err: nil}
+}
+
+func GetPriceFromCoinCap(
+	ctx context.Context,
+	name string,
+	wg *sync.WaitGroup,
+	priceChan chan<- priceChanStruct,
+	errChan chan<- errorChanStruct,
+) {
+	defer wg.Done()
+
+	priceFloat := 0.
+
+	params := "/assets/" + url.QueryEscape(name)
+	path := coincapAPIURLv2 + params
+
+	client := GetProxiedClient()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err)
+
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err).Send()
+
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err)
+	}
+
+	var coinCapAssetGetResponse CoinCapAssetGetResponse
+
+	err = json.Unmarshal(body, &coinCapAssetGetResponse)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err).Send()
+	}
+
+	priceFloat, err = strconv.ParseFloat(coinCapAssetGetResponse.Data.PriceUsd, 64)
+	if err != nil {
+		priceChan <- priceChanStruct{name: name, price: priceFloat}
+		errChan <- errorChanStruct{hasError: true, err: err}
+
+		log.Error().Err(err).Send()
+	}
+
+	log.Info().Msg(string(body))
+
+	priceChan <- priceChanStruct{name: name, price: priceFloat}
+	errChan <- errorChanStruct{hasError: false, err: nil}
+}
+
+func (aw appWrapper) PriceHandler(echoCtx echo.Context) error {
+	writer := echoCtx.Response().Writer
+	request := echoCtx.Request()
 	writer.Header().Add("Content-Type", "application/json")
 
 	if request.Method != http.MethodGet {
@@ -361,7 +585,7 @@ func PriceHandler(writer http.ResponseWriter, request *http.Request) {
 			http.Error(writer, "internal server error", http.StatusInternalServerError)
 		}
 
-		return
+		return nil
 	}
 
 	var waitGroup sync.WaitGroup
@@ -407,19 +631,26 @@ func PriceHandler(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		log.Error().Err(err)
 		http.Error(writer, "internal server error", http.StatusInternalServerError)
+
+		return err
 	}
+
+	return nil
 }
 
-func PairHandler(w http.ResponseWriter, r *http.Request) {
+func (aw appWrapper) PairHandler(echoCtx echo.Context) error {
 	var err error
 
-	w.Header().Add("Content-Type", "application/json")
+	writer := echoCtx.Response().Writer
+	request := echoCtx.Request()
 
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method is not supported.", http.StatusNotFound)
+	writer.Header().Add("Content-Type", "application/json")
+
+	if request.Method != http.MethodGet {
+		http.Error(writer, "Method is not supported.", http.StatusNotFound)
 	}
 
-	addSecureHeaders(&w)
+	addSecureHeaders(&writer)
 
 	var one string
 
@@ -427,7 +658,7 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 
 	var multiplier float64
 
-	params := r.URL.Query()
+	params := request.URL.Query()
 	for key, value := range params {
 		switch key {
 		case "one":
@@ -456,7 +687,7 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 	defer close(priceChan)
 	defer close(errChan)
 
-	ctx, cancel := context.WithTimeout(r.Context(), getTimeout*time.Second)
+	ctx, cancel := context.WithTimeout(request.Context(), getTimeout*time.Second)
 	defer cancel()
 
 	waitGroup.Add(2) //nolint: mnd,gomnd
@@ -500,11 +731,15 @@ func PairHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Info().Msg(fmt.Sprintf("%v", ratio))
 
-	err = json.NewEncoder(w).Encode(map[string]interface{}{"ratio": ratio})
+	err = json.NewEncoder(writer).Encode(map[string]interface{}{"ratio": ratio})
 	if err != nil {
 		log.Error().Err(err).Send()
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		http.Error(writer, "internal server error", http.StatusInternalServerError)
+
+		return err
 	}
+
+	return nil
 }
 
 type alertType struct {
@@ -563,7 +798,7 @@ func getTickers() tickersType {
 	return tickers
 }
 
-func alertManagerWorker(alert alertType) {
+func alertManagerWorker(alert alertType, tgChannelID int64) {
 	expression, err := govaluate.NewEvaluableExpression(alert.Expr)
 	if err != nil {
 		log.Error().Err(err)
@@ -633,47 +868,44 @@ func alertManagerWorker(alert alertType) {
 		return
 	}
 
-	token := os.Getenv(telegramBotTokenEnvVar)
 	msgText := "notification " + alert.Expr + " has been triggered"
-
-	tokenInt, err := strconv.ParseInt(token[1:len(token)-1], 10, 64)
 
 	if err == nil {
 		log.Error().Err(err)
 	}
 
-	sendToTg("telebot:8000", msgText, tokenInt)
+	sendToTg(msgText, tgChannelID)
 }
 
-func alertManager(alertsCheckInterval int64) {
+func alertManager(alertsCheckInterval int64, tgChannelID int64) {
 	for {
 		alerts := getAlerts()
 
 		log.Info().Msg(fmt.Sprintf("%v", alerts))
 
 		for alertIndex := range alerts.Alerts {
-			go alertManagerWorker(alerts.Alerts[alertIndex])
+			go alertManagerWorker(alerts.Alerts[alertIndex], tgChannelID)
 		}
 
 		time.Sleep(time.Second * time.Duration(alertsCheckInterval))
 	}
 }
 
-func tickerManager(tickerCheckInterval int64) {
+func tickerManager(tickerCheckInterval int64, tgChannelID int64) {
 	for {
 		tickers := getTickers()
 
 		log.Info().Msg(fmt.Sprintf("%v", tickers))
 
 		for tickerIndex := range tickers.Tickers {
-			go tickerManagerWorker(tickers.Tickers[tickerIndex])
+			go tickerManagerWorker(tickers.Tickers[tickerIndex], tgChannelID)
 		}
 
 		time.Sleep(time.Second * time.Duration(tickerCheckInterval))
 	}
 }
 
-func tickerManagerWorker(ticker tickerType) {
+func tickerManagerWorker(ticker tickerType, tgChannelID int64) {
 	var waitGroup sync.WaitGroup
 
 	priceChan := make(chan priceChanStruct, 1)
@@ -707,17 +939,11 @@ func tickerManagerWorker(ticker tickerType) {
 		log.Error().Err(errBadLogic)
 	}
 
-	token := os.Getenv(telegramBotTokenEnvVar)
 	msgText := "ticker: " + ticker.Name + ":" + strconv.FormatFloat(price.price, 'f', -1, 64)
-	tokenInt, err := strconv.ParseInt(token[1:len(token)-1], 10, 64)
 
 	log.Print(msgText)
 
-	if err == nil {
-		log.Error().Err(err)
-	}
-
-	sendToTg("telebot:8000", msgText, tokenInt)
+	sendToTg(msgText, tgChannelID)
 }
 
 type addAlertJSONType struct {
@@ -729,7 +955,10 @@ type tickerJSONType struct {
 	Name string `json:"name"`
 }
 
-func tickerHandler(writer http.ResponseWriter, request *http.Request) {
+func (aw appWrapper) tickerHandler(echoCtx echo.Context) error {
+	writer := echoCtx.Response().Writer
+	request := echoCtx.Request()
+
 	addSecureHeaders(&writer)
 
 	handler := Handler{rdb: rdb}
@@ -748,9 +977,13 @@ func tickerHandler(writer http.ResponseWriter, request *http.Request) {
 	default:
 		http.Error(writer, "Method is not supported.", http.StatusNotFound)
 	}
+
+	return nil
 }
 
-func healthHandler(writer http.ResponseWriter, request *http.Request) {
+func (aw appWrapper) healthHandler(echoCtx echo.Context) error {
+	writer := echoCtx.Response().Writer
+	request := echoCtx.Request()
 	var RedisError string
 
 	var HivedError string
@@ -799,117 +1032,197 @@ func healthHandler(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		http.Error(writer, "internal server error", http.StatusInternalServerError)
 		log.Error().Err(err)
-	}
-}
 
-func robotsHandler(writer http.ResponseWriter, _ *http.Request) {
-	writer.Header().Add("Content-Type", "text/plain")
-	addSecureHeaders(&writer)
-
-	_, err := writer.Write([]byte("User-Agents: *\nDisallow: /\n"))
-	if err != nil {
-		log.Error().Err(err)
+		return err
 	}
 
-	http.Error(writer, "internal server error", http.StatusInternalServerError)
-}
-
-func startServer(gracefulWait time.Duration, flagPort string) {
-	router := mux.NewRouter()
-
-	cfg := &tls.Config{
-		MinVersion:               tls.VersionTLS13,
-		PreferServerCipherSuites: true,
-	}
-
-	srv := &http.Server{
-		Addr:         "0.0.0.0:" + flagPort,
-		WriteTimeout: time.Second * serverTLSWriteTimeout,
-		ReadTimeout:  time.Second * serverTLSReadTimeout,
-		Handler:      router,
-		TLSConfig:    cfg,
-	}
-
-	router.HandleFunc("/crypto/v1/health", healthHandler)
-	router.HandleFunc("/crypto/v1/price", PriceHandler)
-	router.HandleFunc("/crypto/v1/pair", PairHandler)
-	router.HandleFunc("/crypto/v1/alert", alertHandler)
-	router.HandleFunc("/crypto/v1/ticker", tickerHandler)
-	router.HandleFunc("/crypto/v1/robots.txt", robotsHandler)
-
-	go func() {
-		var certPath, keyPath string
-
-		switch os.Getenv(serverDeploymentType) {
-		case "deployment":
-			certPath = "/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem"
-			keyPath = "/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem"
-		case "test":
-			certPath = "/certs/server.cert"
-			keyPath = "/certs/server.key"
-		default:
-			log.Fatal().Err(errUnknownDeploymentKind)
-		}
-
-		if err := srv.ListenAndServeTLS(certPath, keyPath); err != nil {
-			log.Fatal().Err(err).Send()
-		}
-	}()
-
-	c := make(chan os.Signal, 1)
-
-	signal.Notify(c, os.Interrupt)
-	<-c
-
-	ctx, cancel := context.WithTimeout(context.Background(), gracefulWait)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Error().Err(err)
-	} else {
-		log.Info().Msg("gracefully shut down the server")
-	}
+	return nil
 }
 
 func setupLogging() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 }
 
+func (aw appWrapper) postHandler(context echo.Context) error {
+	user, pass, ok := context.Request().BasicAuth()
+	if !ok {
+		return context.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
+	}
+
+	userRecord, err := aw.app.Dao().FindAuthRecordByUsername("users", user)
+	if err != nil {
+		return context.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
+	}
+
+	if !userRecord.ValidatePassword(pass) {
+		return context.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
+	}
+
+	return context.JSON(http.StatusOK, "OK") //nolint: wrapcheck
+}
+
+func defaultPublicDir() string {
+	if strings.HasPrefix(os.Args[0], os.TempDir()) {
+		return "./pb_public"
+	}
+
+	return filepath.Join(os.Args[0], "../pb_public")
+}
+
+func setRootCmds(app *pocketbase.PocketBase) RootCmds {
+	var rootCmds RootCmds
+
+	app.RootCmd.PersistentFlags().StringVar(
+		&rootCmds.hooksDir,
+		"hooksDir",
+		"",
+		"the directory with the JS app hooks",
+	)
+
+	app.RootCmd.PersistentFlags().BoolVar(
+		&rootCmds.hooksWatch,
+		"hooksWatch",
+		true,
+		"auto restart the app on pb_hooks file change",
+	)
+
+	app.RootCmd.PersistentFlags().IntVar(
+		&rootCmds.hooksPool,
+		"hooksPool",
+		25,
+		"the total prewarm goja.Runtime instances for the JS app hooks execution",
+	)
+
+	app.RootCmd.PersistentFlags().StringVar(
+		&rootCmds.migrationsDir,
+		"migrationsDir",
+		"",
+		"the directory with the user defined migrations",
+	)
+
+	app.RootCmd.PersistentFlags().BoolVar(
+		&rootCmds.automigrate,
+		"automigrate",
+		true,
+		"enable/disable auto migrations",
+	)
+
+	app.RootCmd.PersistentFlags().StringVar(
+		&rootCmds.publicDir,
+		"publicDir",
+		defaultPublicDir(),
+		"the directory to serve static files",
+	)
+
+	app.RootCmd.PersistentFlags().BoolVar(
+		&rootCmds.indexFallback,
+		"indexFallback",
+		true,
+		"fallback the request to index.html on missing static path (eg. when pretty urls are used with SPA)",
+	)
+
+	app.RootCmd.PersistentFlags().IntVar(
+		&rootCmds.queryTimeout,
+		"queryTimeout",
+		30,
+		"the default SELECT queries timeout in seconds",
+	)
+
+	return rootCmds
+}
+
+func startPocketbaseApp() {
+	app := pocketbase.New()
+
+	aw := appWrapper{app: app}
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.POST("/", aw.postHandler)
+		e.Router.GET("/health", aw.healthHandler)
+		e.Router.GET("/api/crypto/v1/price", aw.PriceHandler)
+		e.Router.GET("/api/crypto/v1/pair", aw.PairHandler)
+
+		e.Router.GET("/api/crypto/v1/alert", aw.alertHandler)
+		e.Router.PUT("/api/crypto/v1/alert", aw.alertHandler)
+		e.Router.POST("/api/crypto/v1/alert", aw.alertHandler)
+		e.Router.PATCH("/api/crypto/v1/alert", aw.alertHandler)
+		e.Router.DELETE("/api/crypto/v1/alert", aw.alertHandler)
+
+		e.Router.GET("/api/crypto/v1/ticker", aw.tickerHandler)
+		e.Router.PUT("/api/crypto/v1/ticker", aw.tickerHandler)
+		e.Router.POST("/api/crypto/v1/ticker", aw.tickerHandler)
+		e.Router.PATCH("/api/crypto/v1/ticker", aw.tickerHandler)
+		e.Router.DELETE("/api/crypto/v1/ticker", aw.tickerHandler)
+
+		return nil
+	})
+
+	rootCmds := setRootCmds(app)
+
+	err := app.RootCmd.ParseFlags(os.Args[1:])
+	if err != nil {
+		log.Fatal().Err(err)
+	}
+
+	jsvm.MustRegister(app, jsvm.Config{
+		MigrationsDir: rootCmds.migrationsDir,
+		HooksDir:      rootCmds.hooksDir,
+		HooksWatch:    rootCmds.hooksWatch,
+		HooksPoolSize: rootCmds.hooksPoolSize,
+	})
+
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
+		TemplateLang: migratecmd.TemplateLangJS,
+		Automigrate:  rootCmds.automigrate,
+		Dir:          rootCmds.migrationsDir,
+	})
+
+	ghupdate.MustRegister(app, app.RootCmd, ghupdate.Config{})
+
+	app.OnAfterBootstrap().PreAdd(func(_ *core.BootstrapEvent) error {
+		app.Dao().ModelQueryTimeout = time.Duration(rootCmds.queryTimeout) * time.Second
+
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.GET("/*", apis.StaticDirectoryHandler(os.DirFS(rootCmds.publicDir), rootCmds.indexFallback))
+
+		return nil
+	})
+
+	if err := app.Start(); err != nil {
+		log.Fatal().Err(err)
+	}
+}
+
 func main() {
-	var gracefulWait time.Duration
+	data, err := os.ReadFile("/hived/hived.toml")
+	if err != nil {
+		log.Fatal().Err(err)
+	}
 
-	flagPort := flag.String("port", "8008", "determined the port the sercice runs on")
-	redisAddress := flag.String("redisaddress", "redis:6379", "determines the address of the redis instance")
-	redisPassword := flag.String("redispassword", "", "determines the password of the redis db")
-	redisDB := flag.Int64("redisdb", 0, "determines the db number")
-	alertsCheckInterval := flag.Int64(
-		"alertinterval",
-		alertCheckIntervalDefault,
-		"in seconds, the amount of time between alert checks")
-	tickerCheckInterval := flag.Int64(
-		"interval",
-		tickerCheckIntervalDefault,
-		"in seconds, the amount of time between alert checks")
+	var config HivedConfig
 
-	flag.DurationVar(
-		&gracefulWait, "gracefulwait",
-		time.Second*defaultGracefulShutdown,
-		"the duration to wait during the graceful shutdown")
+	_, err = toml.Decode(string(data), &config)
+	if err != nil {
+		log.Fatal().Err(err)
+	}
 
-	flag.Parse()
+	fmt.Println("XXX:", config)
 
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     *redisAddress,
-		Password: *redisPassword,
-		DB:       int(*redisDB),
+		Addr:     config.KeydbAddress,
+		Password: config.KeydbPassword,
+		DB:       config.KeydbDB,
 	})
 	defer rdb.Close()
 
 	setupLogging()
 
-	go alertManager(*alertsCheckInterval)
+	go alertManager(config.AlertsCheckInterval, config.TelegramChannelID)
 
-	go tickerManager(*tickerCheckInterval)
+	go tickerManager(config.TickerCheckInterval, config.TelegramChannelID)
 
-	startServer(gracefulWait, *flagPort)
+	startPocketbaseApp()
 }

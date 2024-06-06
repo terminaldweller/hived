@@ -1,31 +1,4 @@
 services:
-  auth:
-    image: auth
-    build:
-      context: ./auth
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-    networks:
-      - authnet
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8091:8090"
-    depends_on:
-      - nginx
-    volumes:
-      - pb-vault:/auth/pb_data
-    cap_drop:
-      - ALL
-    environment:
-      - SERVER_DEPLOYMENT_TYPE=deployment
-    entrypoint: ["/auth/auth"]
-    command: ["serve", "--http=0.0.0.0:8090"]
   nginx:
     image: nginx:stable
     deploy:
@@ -37,9 +10,9 @@ services:
       options:
         max-size: "100m"
     ports:
-      - "127.0.0.1:8090:443"
+      - "127.0.0.1:10008:443"
     networks:
-      - authnet
+      - apinet
     restart: unless-stopped
     cap_drop:
       - ALL
@@ -50,9 +23,11 @@ services:
       - SETUID
       - NET_BIND_SERVICE
     volumes:
-      - ./auth/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ss_certs/server.cert:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:ro
       - ./ss_certs/server.key:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:ro
+    depends_on:
+      - hived
   hived:
     image: hived
     build:
@@ -70,66 +45,23 @@ services:
     networks:
       - apinet
       - dbnet
-      - telenet
     ports:
-      - "127.0.0.1:10008:8008"
+      - "127.0.0.1:10009:8090"
+    entrypoint: ["/hived/hived"]
+    command: ["serve", "--http=0.0.0.0:8090"]
     depends_on:
       - keydb
-      - telebot
-    entrypoint: ["/hived/docker-entrypoint.sh"]
     cap_drop:
       - ALL
     environment:
       - SERVER_DEPLOYMENT_TYPE=test
-      - HIVED_PRICE_SOURCE=cmc
+      - HIVED_PRICE_SOURCE=cryptocompare
       - CMC_API_KEY=
       - POLYGON_API_KEY=
-  telebot:
-    image: telebot
-    build:
-      context: ./telebot
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-    secrets:
-      - tg_bot_token
-    networks:
-      - telenet
-    ports:
-      - "127.0.0.1:10009:8000"
-    entrypoint: ["/telebot/docker-entrypoint.sh"]
-    cap_drop:
-      - ALL
-    environment:
-      - SERVER_DEPLOYMENT_TYPE=test
-  arbiter:
-    image: arbiter
-    build:
-      context: ./arbiter
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-    networks:
-      - apinet
-      - dbnet
-      - telenet
-    ports:
-      - "127.0.0.1:8009:8009"
-    entrypoint: ["/arbiter/arbiter"]
-    cap_drop:
-      - ALL
-    environment:
-      - SERVER_DEPLOYMENT_TYPE=test
+      - CRYPTOCOMPARE_API_KEY=
+      - TELEGRAM_BOT_TOKEN=
+    volumes:
+      - ./hived/hived.toml:/hived/hived.toml
   keydb:
     image: eqalpha/keydb:alpine_x86_64_v6.3.4
     deploy:
@@ -146,12 +78,10 @@ services:
       - "127.0.0.1:6380:6379"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
-    # volumes:
-    #   - keydb-data:/data/
+    volumes:
+      - keydb-data:/data/
 networks:
-  authnet:
   dbnet:
-  telenet:
   apinet:
 secrets:
   tg_bot_token:

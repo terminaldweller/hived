@@ -1,80 +1,95 @@
 services:
+  nginx:
+    image: nginx:stable
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+    ports:
+      - "127.0.0.1:10008:443"
+    networks:
+      - apinet
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:ro
+      - /etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:ro
+    depends_on:
+      - hived
   hived:
     image: hived
     build:
       context: ./hived
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
     secrets:
       - tg_bot_token
     networks:
-      - mainnet
-      - telenet
-    restart: unless-stopped
+      - apinet
+      - dbnet
     ports:
-      - "8007:8008"
+      - "127.0.0.1:10009:8090"
+    entrypoint: ["/hived/hived"]
+    command: ["serve", "--http=0.0.0.0:8090"]
     depends_on:
       - keydb
-      - telebot
-    entrypoint: ["/hived/docker-entrypoint.sh"]
-    volumes:
-      - /etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem
-      - /etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem
     cap_drop:
       - ALL
     environment:
-      - SERVER_DEPLOYMENT_TYPE=deployment
+      - SERVER_DEPLOYMENT_TYPE=test
+      - HIVED_PRICE_SOURCE=cryptocompare
+      - CMC_API_KEY=
       - POLYGON_API_KEY=
       - CRYPTOCOMPARE_API_KEY=
-      - HIVED_PRICE_SOURCE= 
-  telebot:
-    image: telebot
-    build:
-      context: ./telebot
-    secrets:
-      - tg_bot_token
-    networks:
-      - telenet
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:9009:8000"
-    entrypoint: ["/telebot/docker-entrypoint.sh"]
-    cap_drop:
-      - ALL
-    environment:
-      - SERVER_DEPLOYMENT_TYPE=deployment
+      - TELEGRAM_BOT_TOKEN=
+    volumes:
+      - ./hived/hived.toml:/hived/hived.toml
   keydb:
     image: eqalpha/keydb:alpine_x86_64_v6.3.4
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
     networks:
-      - mainnet
-    restart: unless-stopped
+      - dbnet
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:6380:6379"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     volumes:
-      - redis-data:/data/
-  arbiter:
-    image: arbiter
-    build:
-      context: ./arbiter
-    networks:
-      - mainnet
-    ports:
-      - "8009:8009"
-    entrypoint: ["/arbiter/arbiter"]
-    volumes:
-      - /etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem
-      - /etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem
-    cap_drop:
-      - ALL
-    environment:
-      - SERVER_DEPLOYMENT_TYPE=deployment
+      - keydb-data:/data/
 networks:
-  mainnet:
-    driver: bridge
-  telenet:
-    driver: bridge
+  dbnet:
+  apinet:
 secrets:
   tg_bot_token:
     file: ./tgtoken
+  polygon_api_key:
+    file: ./polygon_api_key
+  cmc_api_key:
+    file: ./cmc_api_key
 volumes:
-  redis-data:
+  keydb-data:
+  p
