@@ -49,10 +49,14 @@ func (tickerHandler Handler) HandleTickerGet(writer http.ResponseWriter, request
 	}
 
 	var ErrorString string
+	var IsSuccessful bool
+
 	if err == nil {
 		ErrorString = ""
+		IsSuccessful = true
 	} else {
 		ErrorString = err.Error()
+		IsSuccessful = false
 	}
 
 	writer.Header().Add("Content-Type", "application/json")
@@ -62,7 +66,7 @@ func (tickerHandler Handler) HandleTickerGet(writer http.ResponseWriter, request
 		Error        string `json:"error"`
 		Key          string `json:"key"`
 		Expr         string `json:"expr"`
-	}{IsSuccessful: true, Error: ErrorString, Key: identifier, Expr: redisResultString})
+	}{IsSuccessful: IsSuccessful, Error: ErrorString, Key: identifier, Expr: redisResultString})
 
 	if err != nil {
 		log.Error().Err(err)
@@ -103,7 +107,7 @@ func (tickerHandler Handler) HandleTickerDelete(writer http.ResponseWriter, requ
 	defer cancel()
 
 	tickerHandler.rdb.Del(ctx, identifier)
-	setKey := "alert:" + identifier
+	setKey := "ticker:" + identifier
 	tickerHandler.rdb.SRem(ctx, "tickerkeys", setKey)
 	log.Printf(setKey)
 

@@ -146,10 +146,13 @@ func (alertHandler Handler) HandleAlertGet(writer http.ResponseWriter, request *
 	}
 
 	var ErrorString string
+	var IsSuccessful bool
 	if err == nil {
 		ErrorString = ""
+		IsSuccessful = true
 	} else {
 		ErrorString = err.Error()
+		IsSuccessful = false
 	}
 
 	writer.Header().Add("Content-Type", "application/json")
@@ -159,7 +162,7 @@ func (alertHandler Handler) HandleAlertGet(writer http.ResponseWriter, request *
 		Error        string `json:"error"`
 		Key          string `json:"key"`
 		Expr         string `json:"expr"`
-	}{IsSuccessful: true, Error: ErrorString, Key: identifier, Expr: redisResultString})
+	}{IsSuccessful: IsSuccessful, Error: ErrorString, Key: identifier, Expr: redisResultString})
 
 	if err != nil {
 		log.Error().Err(err)

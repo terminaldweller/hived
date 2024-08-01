@@ -10,7 +10,7 @@ services:
       options:
         max-size: "100m"
     ports:
-      - "127.0.0.1:10008:443"
+      - "8007:443"
     networks:
       - apinet
     restart: unless-stopped
@@ -29,9 +29,7 @@ services:
     depends_on:
       - hived
   hived:
-    image: hived
-    build:
-      context: ./hived
+    image: terminaldweller/hived:main
     deploy:
       resources:
         limits:
@@ -42,6 +40,7 @@ services:
         max-size: "100m"
     secrets:
       - tg_bot_token
+    restart: unless-stopped
     networks:
       - apinet
       - dbnet
@@ -92,4 +91,3 @@ secrets:
     file: ./cmc_api_key
 volumes:
   keydb-data:
-  p

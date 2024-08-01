@@ -2,7 +2,7 @@ FROM golang:1.22-alpine3.20 as builder
 COPY go.* /hived/
 RUN cd /hived && go mod download
 COPY *.go /hived/
-RUN cd /hived && go build
+RUN cd /hived && CGO_ENABLED=0 go build
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=builder /hived/hived "/usr/bin/hived"

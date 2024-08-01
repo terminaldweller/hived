@@ -29,6 +29,7 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -75,6 +76,7 @@ type HivedConfig struct {
 	TickerCheckInterval int64  `toml:"tickerCheckInterval"`
 	CacheDuration       int64  `toml:"cacheDuration"`
 	TelegramChannelID   int64  `toml:"telegramChannelID"`
+	TelegramBotToken    string `toml:"telegramBotToken"`
 }
 
 type appWrapper struct {
@@ -128,11 +130,8 @@ type HTTPHandler struct {
 	function HTTPHandlerFunc
 }
 
-func getTGBot() *tgbotapi.BotAPI {
-	token := os.Getenv("TELEGRAM_BOT_TOKEN")
-	fmt.Println("YYY:", token)
-
-	bot, err := tgbotapi.NewBotAPI(token)
+func getTGBot(tgtoken string) *tgbotapi.BotAPI {
+	bot, err := tgbotapi.NewBotAPI(tgtoken)
 	if err != nil {
 		log.Fatal().Err(err).Send()
 	}
@@ -172,10 +171,10 @@ func addSecureHeaders(writer *http.ResponseWriter) {
 	(*writer).Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 }
 
-func sendToTg(msg string, channelID int64) {
-	tgbotapi := getTGBot()
+func (cw HivedConfig) sendToTg(msg string) {
+	tgbotapi := getTGBot(cw.TelegramBotToken)
 
-	err := sendMessage(tgbotapi, msg, channelID)
+	err := sendMessage(tgbotapi, msg, cw.TelegramChannelID)
 	if err != nil {
 		log.Info().Err(err)
 	}
@@ -798,7 +797,7 @@ func getTickers() tickersType {
 	return tickers
 }
 
-func alertManagerWorker(alert alertType, tgChannelID int64) {
+func alertManagerWorker(alert alertType, config HivedConfig) {
 	expression, err := govaluate.NewEvaluableExpression(alert.Expr)
 	if err != nil {
 		log.Error().Err(err)
@@ -874,38 +873,38 @@ func alertManagerWorker(alert alertType, tgChannelID int64) {
 		log.Error().Err(err)
 	}
 
-	sendToTg(msgText, tgChannelID)
+	config.sendToTg(msgText)
 }
 
-func alertManager(alertsCheckInterval int64, tgChannelID int64) {
+func alertManager(config HivedConfig) {
 	for {
 		alerts := getAlerts()
 
 		log.Info().Msg(fmt.Sprintf("%v", alerts))
 
 		for alertIndex := range alerts.Alerts {
-			go alertManagerWorker(alerts.Alerts[alertIndex], tgChannelID)
+			go alertManagerWorker(alerts.Alerts[alertIndex], config)
 		}
 
-		time.Sleep(time.Second * time.Duration(alertsCheckInterval))
+		time.Sleep(time.Second * time.Duration(config.AlertsCheckInterval))
 	}
 }
 
-func tickerManager(tickerCheckInterval int64, tgChannelID int64) {
+func tickerManager(config HivedConfig) {
 	for {
 		tickers := getTickers()
 
 		log.Info().Msg(fmt.Sprintf("%v", tickers))
 
 		for tickerIndex := range tickers.Tickers {
-			go tickerManagerWorker(tickers.Tickers[tickerIndex], tgChannelID)
+			go tickerManagerWorker(tickers.Tickers[tickerIndex], config)
 		}
 
-		time.Sleep(time.Second * time.Duration(tickerCheckInterval))
+		time.Sleep(time.Second * time.Duration(config.TickerCheckInterval))
 	}
 }
 
-func tickerManagerWorker(ticker tickerType, tgChannelID int64) {
+func tickerManagerWorker(ticker tickerType, config HivedConfig) {
 	var waitGroup sync.WaitGroup
 
 	priceChan := make(chan priceChanStruct, 1)
@@ -943,7 +942,7 @@ func tickerManagerWorker(ticker tickerType, tgChannelID int64) {
 
 	log.Print(msgText)
 
-	sendToTg(msgText, tgChannelID)
+	config.sendToTg(msgText)
 }
 
 type addAlertJSONType struct {
@@ -1069,6 +1068,50 @@ func defaultPublicDir() string {
 	return filepath.Join(os.Args[0], "../pb_public")
 }
 
+func (aw appWrapper) apikeyAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		apikey := c.Request().Header["Apikey"][0]
+		user := c.Request().Header["User"][0]
+
+		userRecord, err := aw.app.Dao().FindAuthRecordByUsername("users", user)
+		if err != nil {
+			return apis.NewBadRequestError("unauthorized", nil)
+		}
+
+		hashedAPIKey := userRecord.Get("apikey")
+
+		hashedAPIKeyStr, ok := hashedAPIKey.(string)
+		if !ok {
+			return apis.NewBadRequestError("unauthorized", nil)
+		}
+
+		err = bcrypt.CompareHashAndPassword([]byte(hashedAPIKeyStr), []byte(apikey))
+
+		return next(c)
+	}
+}
+
+func (aw appWrapper) authMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		user, pass, ok := c.Request().BasicAuth()
+		if !ok {
+			return apis.NewBadRequestError("unauthorized", nil)
+		}
+
+		userRecord, err := aw.app.Dao().FindAuthRecordByUsername("users", user)
+		if err != nil {
+			log.Print(err)
+			return apis.NewBadRequestError("unauthorized", nil)
+		}
+
+		if !userRecord.ValidatePassword(pass) {
+			return apis.NewBadRequestError("unauthorized", nil)
+		}
+
+		return next(c)
+	}
+}
+
 func setRootCmds(app *pocketbase.PocketBase) RootCmds {
 	var rootCmds RootCmds
 
@@ -1137,23 +1180,33 @@ func startPocketbaseApp() {
 	aw := appWrapper{app: app}
 
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.POST("/", aw.postHandler)
-		e.Router.GET("/health", aw.healthHandler)
-		e.Router.GET("/api/crypto/v1/price", aw.PriceHandler)
-		e.Router.GET("/api/crypto/v1/pair", aw.PairHandler)
+		e.Router.POST("/", aw.postHandler, aw.authMiddleware)
+		e.Router.GET("/health", aw.healthHandler, aw.authMiddleware)
+		e.Router.GET("/api/crypto/v1/price", aw.PriceHandler, aw.authMiddleware)
+		e.Router.GET("/api/crypto/v1/pair", aw.PairHandler, aw.authMiddleware)
 
-		e.Router.GET("/api/crypto/v1/alert", aw.alertHandler)
-		e.Router.PUT("/api/crypto/v1/alert", aw.alertHandler)
-		e.Router.POST("/api/crypto/v1/alert", aw.alertHandler)
-		e.Router.PATCH("/api/crypto/v1/alert", aw.alertHandler)
-		e.Router.DELETE("/api/crypto/v1/alert", aw.alertHandler)
+		e.Router.GET("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
+		e.Router.PUT("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
+		e.Router.POST("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
+		e.Router.PATCH("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
+		e.Router.DELETE("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
 
-		e.Router.GET("/api/crypto/v1/ticker", aw.tickerHandler)
-		e.Router.PUT("/api/crypto/v1/ticker", aw.tickerHandler)
-		e.Router.POST("/api/crypto/v1/ticker", aw.tickerHandler)
-		e.Router.PATCH("/api/crypto/v1/ticker", aw.tickerHandler)
-		e.Router.DELETE("/api/crypto/v1/ticker", aw.tickerHandler)
+		e.Router.GET("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
+		e.Router.PUT("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
+		e.Router.POST("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
+		e.Router.PATCH("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
+		e.Router.DELETE("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
 
+		return nil
+	})
+
+	app.OnRecordAfterCreateRequest("users").Add(func(e *core.RecordCreateEvent) error {
+		apikeyHash, err := GenAPIKey()
+		if err != nil {
+			return err
+		}
+
+		e.Record.Set("apikey", apikeyHash)
 		return nil
 	})
 
@@ -1197,7 +1250,9 @@ func startPocketbaseApp() {
 }
 
 func main() {
-	data, err := os.ReadFile("/hived/hived.toml")
+	configPathFlag := flag.String("config", "/hived/hived.toml", "path to the hived config file")
+	flag.Parse()
+	data, err := os.ReadFile(*configPathFlag)
 	if err != nil {
 		log.Fatal().Err(err)
 	}
@@ -1209,7 +1264,7 @@ func main() {
 		log.Fatal().Err(err)
 	}
 
-	fmt.Println("XXX:", config)
+	fmt.Println("config:", config)
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     config.KeydbAddress,
@@ -1220,9 +1275,9 @@ func main() {
 
 	setupLogging()
 
-	go alertManager(config.AlertsCheckInterval, config.TelegramChannelID)
+	go alertManager(config)
 
-	go tickerManager(config.TickerCheckInterval, config.TelegramChannelID)
+	go tickerManager(config)
 
 	startPocketbaseApp()
 }
