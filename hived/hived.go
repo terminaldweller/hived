@@ -24,6 +24,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/models/schema"
 	"github.com/pocketbase/pocketbase/plugins/ghupdate"
 	"github.com/pocketbase/pocketbase/plugins/jsvm"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
@@ -1070,8 +1071,8 @@ func defaultPublicDir() string {
 
 func (aw appWrapper) apikeyAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		apikey := c.Request().Header["Apikey"][0]
-		user := c.Request().Header["User"][0]
+		apikey := c.Request().Header["X-Apikey"][0]
+		user := c.Request().Header["X-User"][0]
 
 		userRecord, err := aw.app.Dao().FindAuthRecordByUsername("users", user)
 		if err != nil {
@@ -1086,6 +1087,10 @@ func (aw appWrapper) apikeyAuthMiddleware(next echo.HandlerFunc) echo.HandlerFun
 		}
 
 		err = bcrypt.CompareHashAndPassword([]byte(hashedAPIKeyStr), []byte(apikey))
+		if err != nil {
+			log.Print("apikey auth failed for user: " + user)
+			return apis.NewBadRequestError("unauthorized", nil)
+		}
 
 		return next(c)
 	}
@@ -1180,27 +1185,54 @@ func startPocketbaseApp() {
 	aw := appWrapper{app: app}
 
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.POST("/", aw.postHandler, aw.authMiddleware)
-		e.Router.GET("/health", aw.healthHandler, aw.authMiddleware)
-		e.Router.GET("/api/crypto/v1/price", aw.PriceHandler, aw.authMiddleware)
-		e.Router.GET("/api/crypto/v1/pair", aw.PairHandler, aw.authMiddleware)
+		e.Router.POST("/", aw.postHandler, aw.apikeyAuthMiddleware)
+		e.Router.GET("/health", aw.healthHandler, aw.apikeyAuthMiddleware)
+		e.Router.GET("/api/crypto/v1/price", aw.PriceHandler, aw.apikeyAuthMiddleware)
+		e.Router.GET("/api/crypto/v1/pair", aw.PairHandler, aw.apikeyAuthMiddleware)
 
-		e.Router.GET("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
-		e.Router.PUT("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
-		e.Router.POST("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
-		e.Router.PATCH("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
-		e.Router.DELETE("/api/crypto/v1/alert", aw.alertHandler, aw.authMiddleware)
+		e.Router.GET("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
+		e.Router.PUT("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
+		e.Router.POST("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
+		e.Router.PATCH("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
+		e.Router.DELETE("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
 
-		e.Router.GET("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
-		e.Router.PUT("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
-		e.Router.POST("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
-		e.Router.PATCH("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
-		e.Router.DELETE("/api/crypto/v1/ticker", aw.tickerHandler, aw.authMiddleware)
+		e.Router.GET("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
+		e.Router.PUT("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
+		e.Router.POST("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
+		e.Router.PATCH("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
+		e.Router.DELETE("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
 
 		return nil
 	})
 
-	app.OnRecordAfterCreateRequest("users").Add(func(e *core.RecordCreateEvent) error {
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		dao := app.Dao()
+
+		collection, err := dao.FindCollectionByNameOrId("users")
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to find users collection")
+		}
+
+		if field := collection.Schema.GetFieldByName("apikey"); field == nil {
+			newField := &schema.SchemaField{
+				Name:     "apikey",
+				Type:     schema.FieldTypeText,
+				System:   false,
+				Required: false,
+				Unique:   true,
+			}
+
+			collection.Schema.AddField(newField)
+
+			if err := dao.SaveCollection(collection); err != nil {
+				log.Fatal().Err(err).Msg("failed to save users collection with apikey field")
+			}
+		}
+
+		return nil
+	})
+
+	app.OnRecordBeforeCreateRequest("users").Add(func(e *core.RecordCreateEvent) error {
 		apikeyHash, err := GenAPIKey()
 		if err != nil {
 			return err

@@ -5,4 +5,4 @@ alertsCheckInterval = 600
 tickerCheckInterval = 600
 cacheDuration = 600
 telegramChannelID = 146328407
-telegramBotToken = "556550001:AAFWaKwhezZNBqouGOkulbgghBJ78I1Wzu0"
+telegramBotToken = ""
