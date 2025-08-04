@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine3.20 AS builder
+FROM golang:1.24-alpine3.22 AS builder
 WORKDIR /hived
 COPY go.sum go.mod /hived/
 COPY vendor /hived/vendor
