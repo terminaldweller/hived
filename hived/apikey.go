@@ -5,15 +5,10 @@ import (
 	"encoding/hex"
 	"log"
 
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 func genRandomString() string {
-	return uuid.New().String()
-}
-
-func genRandomString2() string {
 	bytes := make([]byte, 32)
 
 	if _, err := rand.Read(bytes); err != nil {
@@ -32,7 +27,7 @@ func encrypt(plaintext string) (string, error) {
 }
 
 func GenAPIKey() (string, error) {
-	apiKey := genRandomString2()
+	apiKey := genRandomString()
 	log.Print("Generated APIKEY: ", apiKey)
 	encrypted, err := encrypt(apiKey)
 	if err != nil {

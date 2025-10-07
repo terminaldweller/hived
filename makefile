@@ -1,26 +1,26 @@
-.PHONY: d_test d_deploy d_down d_build help
+.PHONY: test deploy down build help
 
 IMAGE_NAME=hived
 
-d_test:
+test:
 	nq docker compose -f ./docker-compose-test.yaml up --build
 
-d_deploy:
+deploy:
 	nq docker compose -f ./docker-compose.yaml up --build
 
-d_down:
+down:
 	docker compose -f ./docker-compose.yaml down
 	docker compose -f ./docker-compose-test.yaml down
 
-d_build: d_build_distroless_vendored
+build: d_build_distroless_vendored
 
-d_build_regular:
+build_regular:
 	docker build -t $(IMAGE_NAME)-f ./hived/Dockerfile ./hived
 
-d_build_distroless:
+build_distroless:
 	docker build -t $(IMAGE_NAME) -f ./hived/Dockerfile_distroless ./hived
 
-d_build_distroless_vendored:
+build_distroless_vendored:
 	docker build -t $(IMAGE_NAME) -f ./hived/Dockerfile_distroless_vendored ./hived
 
 help:
