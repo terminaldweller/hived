@@ -36,7 +36,7 @@ import (
 const (
 	cryptocomparePriceURL        = "https://min-api.cryptocompare.com/data/price?"
 	polygonCryptoTickerURL       = "https://api.polygon.io/v2/snapshot/locale/global/markets/crypto/tickers"
-	cmcCryptoTickerURL           = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest"
+	cmcCryptoTickerURL           = "https://pro-api.coinmarketcap.com/v3/cryptocurrency/quotes/latest"
 	coingeckoAPIURLv3            = "https://api.coingecko.com/api/v3"
 	coincapAPIURLv2              = "https://api.coincap.io/v2"
 	httpClientTimeout            = 5
