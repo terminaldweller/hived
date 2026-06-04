@@ -385,7 +385,7 @@ func getPriceFromCMC(
 
 	var price float64
 	for _, v := range jsonBody.Data {
-		price = v.Quote[0].Price
+		price = v[0].Quote[0].Price
 	}
 
 	err = rdb.Set(ctx, name+"_price", price, time.Duration(*cacheDuration*redisCacheDurationMultiplier)).Err()
