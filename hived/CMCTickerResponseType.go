@@ -43,6 +43,6 @@ type CMCTickerData struct {
 }
 
 type CMCTickerResponseType struct {
-	Data   map[string][]CMCTickerData `json:"data"`
-	Status CMCTickerStatus            `json:"status"`
+	Data   []CMCTickerData `json:"data"`
+	Status CMCTickerStatus `json:"status"`
 }
