@@ -17,6 +17,8 @@ type CMCTickerQuoteData struct {
 	PercentChange24h      float64 `json:"percent_change_24h"`
 	PercentChange7d       float64 `json:"percent_change_7d"`
 	PercentChange30d      float64 `json:"percent_change_30d"`
+	PercentChange60d      float64 `json:"percent_change_60d"`
+	PercentChange90d      float64 `json:"percent_change_90d"`
 	MarketCap             float64 `json:"market_cap"`
 	MarketCapDominance    float64 `json:"market_cap_dominance"`
 	FullyDilutedMarketCap float64 `json:"fully_diluted_market_cap"`
@@ -24,20 +26,20 @@ type CMCTickerQuoteData struct {
 }
 
 type CMCTickerData struct {
-	ID                int                           `json:"id"`
-	Name              string                        `json:"name"`
-	Symbol            string                        `json:"symbol"`
-	Slug              string                        `json:"slug"`
-	IsActive          int                           `json:"is_active"`
-	IsFiat            int                           `json:"is_fiat"`
-	CirculatingSupply float64                       `json:"circulating_supply"`
-	TotalSupply       float64                       `json:"total_supply"`
-	MaxSupply         float64                       `json:"max_supply"`
-	DateAdded         string                        `json:"date_added"`
-	NumMarketPairs    int                           `json:"num_market_pairs"`
-	CMCRank           int                           `json:"cmc_rank"`
-	LastUpdated       string                        `json:"last_updated"`
-	Quote             map[string]CMCTickerQuoteData `json:"quote"`
+	ID                int                  `json:"id"`
+	Name              string               `json:"name"`
+	Symbol            string               `json:"symbol"`
+	Slug              string               `json:"slug"`
+	IsActive          int                  `json:"is_active"`
+	IsFiat            int                  `json:"is_fiat"`
+	CirculatingSupply float64              `json:"circulating_supply"`
+	TotalSupply       float64              `json:"total_supply"`
+	MaxSupply         float64              `json:"max_supply"`
+	DateAdded         string               `json:"date_added"`
+	NumMarketPairs    int                  `json:"num_market_pairs"`
+	CMCRank           int                  `json:"cmc_rank"`
+	LastUpdated       string               `json:"last_updated"`
+	Quote             []CMCTickerQuoteData `json:"quote"`
 }
 
 type CMCTickerResponseType struct {
