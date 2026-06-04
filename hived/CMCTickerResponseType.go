@@ -2,7 +2,7 @@ package main
 
 type CMCTickerStatus struct {
 	Timestamp    string `json:"timestamp"`
-	ErrorCode    int    `json:"error_code"`
+	ErrorCode    string `json:"error_code"`
 	ErrorMessage string `json:"error_message"`
 	Elapsed      int    `json:"elapsed"`
 	CreditCount  int    `json:"credit_count"`
