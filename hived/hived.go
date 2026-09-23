@@ -1250,6 +1250,21 @@ func startPocketbaseApp() {
 			}
 		}
 
+		if field := collection.Fields.GetByName("username"); field == nil {
+
+			newField := &core.TextField{
+				Name:     "username",
+				Required: true,
+				System:   false,
+			}
+
+			collection.Fields.Add(newField)
+
+			if err := app.Save(collection); err != nil {
+				log.Fatal().Err(err).Msg("failed to save users collection with username field")
+			}
+		}
+
 		return e.Next()
 	})
 
@@ -1270,13 +1285,6 @@ func startPocketbaseApp() {
 		log.Fatal().Err(err)
 	}
 
-	// jsvm.MustRegister(app, jsvm.Config{
-	// 	MigrationsDir: rootCmds.migrationsDir,
-	// 	HooksDir:      rootCmds.hooksDir,
-	// 	HooksWatch:    rootCmds.hooksWatch,
-	// 	HooksPoolSize: rootCmds.hooksPoolSize,
-	// })
-
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
 		TemplateLang: migratecmd.TemplateLangJS,
 		Automigrate:  rootCmds.automigrate,
@@ -1284,12 +1292,6 @@ func startPocketbaseApp() {
 	})
 
 	ghupdate.MustRegister(app, app.RootCmd, ghupdate.Config{})
-
-	// app.OnBootstrap().BindFunc(func(_ *core.BootstrapEvent) error {
-	// 	app.Dao().ModelQueryTimeout = time.Duration(rootCmds.queryTimeout) * time.Second
-
-	// 	return nil
-	// })
 
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		e.Router.GET("/*", apis.Static(os.DirFS(rootCmds.publicDir), rootCmds.indexFallback))
