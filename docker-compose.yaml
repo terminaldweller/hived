@@ -107,6 +107,10 @@ services:
     read_only: true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
 networks:
   dbnet:
     enable_ipv6: false
