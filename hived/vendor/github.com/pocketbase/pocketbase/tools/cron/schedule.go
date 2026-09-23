@@ -35,6 +35,8 @@ type Schedule struct {
 	Days       map[int]struct{} `json:"days"`
 	Months     map[int]struct{} `json:"months"`
 	DaysOfWeek map[int]struct{} `json:"daysOfWeek"`
+
+	rawExpr string
 }
 
 // IsDue checks whether the provided Moment satisfies the current Schedule.
@@ -130,6 +132,7 @@ func NewSchedule(cronExpr string) (*Schedule, error) {
 		Days:       days,
 		Months:     months,
 		DaysOfWeek: daysOfWeek,
+		rawExpr:    cronExpr,
 	}, nil
 }
 
@@ -171,7 +174,7 @@ func parseCronSegment(segment string, min int, max int) (map[int]struct{}, error
 			switch len(rangeParts) {
 			case 1:
 				if step != 1 {
-					return nil, errors.New("invalid segement step - step > 1 could be used only with the wildcard or range format")
+					return nil, errors.New("invalid segment step - step > 1 could be used only with the wildcard or range format")
 				}
 				parsed, err := strconv.Atoi(rangeParts[0])
 				if err != nil {

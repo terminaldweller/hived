@@ -2,12 +2,16 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/facebook"
 )
+
+func init() {
+	Providers[NameFacebook] = wrapFactory(NewFacebookProvider)
+}
 
 var _ Provider = (*Facebook)(nil)
 
@@ -16,19 +20,21 @@ const NameFacebook string = "facebook"
 
 // Facebook allows authentication via Facebook OAuth2.
 type Facebook struct {
-	*baseProvider
+	BaseProvider
 }
 
 // NewFacebookProvider creates new Facebook provider instance with some defaults.
 func NewFacebookProvider() *Facebook {
-	return &Facebook{&baseProvider{
+	return &Facebook{BaseProvider{
 		ctx:         context.Background(),
+		order:       5,
+		logo:        `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" preserveAspectRatio="xMidYMid"><path fill="#1877f2" d="M256 128a128 128 0 1 0-148 126.4V165H75.5v-37H108V99.8c0-32 19.1-49.8 48.3-49.8 14 0 28.7 2.5 28.7 2.5V84h-16.1c-16 0-20.9 9.9-20.9 20v24h35.5l-5.7 37H148v89.4A128 128 0 0 0 256 128"/><path fill="#fff" d="m177.8 165 5.7-37H148v-24c0-10.1 5-20 20.9-20H185V52.5S170.4 50 156.3 50C127.1 50 108 67.7 108 99.8V128H75.5v37H108v89.4a129 129 0 0 0 40 0V165z"/></svg>`,
 		displayName: "Facebook",
 		pkce:        true,
 		scopes:      []string{"email"},
-		authUrl:     facebook.Endpoint.AuthURL,
-		tokenUrl:    facebook.Endpoint.TokenURL,
-		userApiUrl:  "https://graph.facebook.com/me?fields=name,email,picture.type(large)",
+		authURL:     facebook.Endpoint.AuthURL,
+		tokenURL:    facebook.Endpoint.TokenURL,
+		userInfoURL: "https://graph.facebook.com/me?fields=name,email,picture.type(large)",
 	}}
 }
 
@@ -36,7 +42,7 @@ func NewFacebookProvider() *Facebook {
 //
 // API reference: https://developers.facebook.com/docs/graph-api/reference/user/
 func (p *Facebook) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
-	data, err := p.FetchRawUserData(token)
+	data, err := p.FetchRawUserInfo(token)
 	if err != nil {
 		return nil, err
 	}
@@ -47,12 +53,14 @@ func (p *Facebook) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 	}
 
 	extracted := struct {
-		Id      string
-		Name    string
-		Email   string
+		Id      string `json:"id"`
+		Name    string `json:"name"`
+		Email   string `json:"email"`
 		Picture struct {
-			Data struct{ Url string }
-		}
+			Data struct {
+				Url string `json:"url"`
+			} `json:"data"`
+		} `json:"picture"`
 	}{}
 	if err := json.Unmarshal(data, &extracted); err != nil {
 		return nil, err
@@ -62,7 +70,7 @@ func (p *Facebook) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 		Id:           extracted.Id,
 		Name:         extracted.Name,
 		Email:        extracted.Email,
-		AvatarUrl:    extracted.Picture.Data.Url,
+		AvatarURL:    extracted.Picture.Data.Url,
 		RawUser:      rawUser,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,

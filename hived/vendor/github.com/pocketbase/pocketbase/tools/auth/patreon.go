@@ -2,11 +2,16 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/endpoints"
 )
+
+func init() {
+	Providers[NamePatreon] = wrapFactory(NewPatreonProvider)
+}
 
 var _ Provider = (*Patreon)(nil)
 
@@ -15,19 +20,21 @@ const NamePatreon string = "patreon"
 
 // Patreon allows authentication via Patreon OAuth2.
 type Patreon struct {
-	*baseProvider
+	BaseProvider
 }
 
 // NewPatreonProvider creates new Patreon provider instance with some defaults.
 func NewPatreonProvider() *Patreon {
-	return &Patreon{&baseProvider{
+	return &Patreon{BaseProvider{
 		ctx:         context.Background(),
+		order:       24,
+		logo:        `<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 1080 1080"><path d="M1033 324c0-137-108-250-234-291a746 746 0 0 0-512 27C106 145 49 333 47 519c-2 154 14 558 242 561 169 2 194-216 273-321 56-75 127-96 216-118a320 320 0 0 0 255-317"/></svg>`,
 		displayName: "Patreon",
 		pkce:        true,
 		scopes:      []string{"identity", "identity[email]"},
-		authUrl:     "https://www.patreon.com/oauth2/authorize",
-		tokenUrl:    "https://www.patreon.com/api/oauth2/token",
-		userApiUrl:  "https://www.patreon.com/api/oauth2/v2/identity?fields%5Buser%5D=full_name,email,vanity,image_url,is_email_verified",
+		authURL:     endpoints.Patreon.AuthURL,
+		tokenURL:    endpoints.Patreon.TokenURL,
+		userInfoURL: "https://www.patreon.com/api/oauth2/v2/identity?fields%5Buser%5D=full_name,email,vanity,image_url,is_email_verified",
 	}}
 }
 
@@ -37,7 +44,7 @@ func NewPatreonProvider() *Patreon {
 // https://docs.patreon.com/#get-api-oauth2-v2-identity
 // https://docs.patreon.com/#user-v2
 func (p *Patreon) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
-	data, err := p.FetchRawUserData(token)
+	data, err := p.FetchRawUserInfo(token)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +61,7 @@ func (p *Patreon) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 				Email           string `json:"email"`
 				Name            string `json:"full_name"`
 				Username        string `json:"vanity"`
-				AvatarUrl       string `json:"image_url"`
+				AvatarURL       string `json:"image_url"`
 				IsEmailVerified bool   `json:"is_email_verified"`
 			} `json:"attributes"`
 		} `json:"data"`
@@ -67,7 +74,7 @@ func (p *Patreon) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 		Id:           extracted.Data.Id,
 		Username:     extracted.Data.Attributes.Username,
 		Name:         extracted.Data.Attributes.Name,
-		AvatarUrl:    extracted.Data.Attributes.AvatarUrl,
+		AvatarURL:    extracted.Data.Attributes.AvatarURL,
 		RawUser:      rawUser,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,

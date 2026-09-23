@@ -2,14 +2,18 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"strconv"
 
-	"github.com/go-ozzo/ozzo-validation/v4/is"
+	"github.com/pocketbase/ozzo-validation/v4/is"
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/oauth2"
 )
+
+func init() {
+	Providers[NameGitee] = wrapFactory(NewGiteeProvider)
+}
 
 var _ Provider = (*Gitee)(nil)
 
@@ -18,19 +22,21 @@ const NameGitee string = "gitee"
 
 // Gitee allows authentication via Gitee OAuth2.
 type Gitee struct {
-	*baseProvider
+	BaseProvider
 }
 
 // NewGiteeProvider creates new Gitee provider instance with some defaults.
 func NewGiteeProvider() *Gitee {
-	return &Gitee{&baseProvider{
+	return &Gitee{BaseProvider{
 		ctx:         context.Background(),
+		order:       10,
+		logo:        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="120 13 72 72"><g fill="none" fill-rule="evenodd"><path d="M0 0h312v100H0z"/><path fill="#c71d23" d="M156 85a36 36 0 1 1 0-72 36 36 0 0 1 0 72m18.2-40h-20.4q-1.7.1-1.8 1.8v4.4q.2 1.6 1.8 1.8h12.4q1.7.1 1.8 1.8v.9c0 3-2.4 5.3-5.3 5.3h-17q-1.6-.1-1.7-1.8V42.3c0-3 2.4-5.3 5.3-5.3h25q1.5-.1 1.7-1.8v-4.4a2 2 0 0 0-1.8-1.8h-24.9C142 29 136 35 136 42.3v25q.2 1.5 1.8 1.7H164a12 12 0 0 0 12-12V46.8q-.2-1.6-1.8-1.8"/></g></svg>`,
 		displayName: "Gitee",
 		pkce:        true,
 		scopes:      []string{"user_info", "emails"},
-		authUrl:     "https://gitee.com/oauth/authorize",
-		tokenUrl:    "https://gitee.com/oauth/token",
-		userApiUrl:  "https://gitee.com/api/v5/user",
+		authURL:     "https://gitee.com/oauth/authorize",
+		tokenURL:    "https://gitee.com/oauth/token",
+		userInfoURL: "https://gitee.com/api/v5/user",
 	}}
 }
 
@@ -38,7 +44,7 @@ func NewGiteeProvider() *Gitee {
 //
 // API reference: https://gitee.com/api/v5/swagger#/getV5User
 func (p *Gitee) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
-	data, err := p.FetchRawUserData(token)
+	data, err := p.FetchRawUserInfo(token)
 	if err != nil {
 		return nil, err
 	}
@@ -50,20 +56,20 @@ func (p *Gitee) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 
 	extracted := struct {
 		Login     string `json:"login"`
-		Id        int    `json:"id"`
 		Name      string `json:"name"`
 		Email     string `json:"email"`
-		AvatarUrl string `json:"avatar_url"`
+		AvatarURL string `json:"avatar_url"`
+		Id        int64  `json:"id"`
 	}{}
 	if err := json.Unmarshal(data, &extracted); err != nil {
 		return nil, err
 	}
 
 	user := &AuthUser{
-		Id:           strconv.Itoa(extracted.Id),
+		Id:           strconv.FormatInt(extracted.Id, 10),
 		Name:         extracted.Name,
 		Username:     extracted.Login,
-		AvatarUrl:    extracted.AvatarUrl,
+		AvatarURL:    extracted.AvatarURL,
 		RawUser:      rawUser,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -114,9 +120,9 @@ func (p *Gitee) fetchPrimaryEmail(token *oauth2.Token) (string, error) {
 	}
 
 	emails := []struct {
-		Email string
-		State string
-		Scope []string
+		Email string   `json:"email"`
+		State string   `json:"state"`
+		Scope []string `json:"scope"`
 	}{}
 	if err := json.Unmarshal(content, &emails); err != nil {
 		// ignore unmarshal error in case "Keep my email address private"

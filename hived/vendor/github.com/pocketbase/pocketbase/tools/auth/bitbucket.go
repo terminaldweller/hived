@@ -2,13 +2,17 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/oauth2"
 )
+
+func init() {
+	Providers[NameBitbucket] = wrapFactory(NewBitbucketProvider)
+}
 
 var _ Provider = (*Bitbucket)(nil)
 
@@ -17,19 +21,21 @@ const NameBitbucket = "bitbucket"
 
 // Bitbucket is an auth provider for Bitbucket.
 type Bitbucket struct {
-	*baseProvider
+	BaseProvider
 }
 
 // NewBitbucketProvider creates a new Bitbucket provider instance with some defaults.
 func NewBitbucketProvider() *Bitbucket {
-	return &Bitbucket{&baseProvider{
+	return &Bitbucket{BaseProvider{
 		ctx:         context.Background(),
+		order:       9,
+		logo:        `<svg xmlns="http://www.w3.org/2000/svg" width="2500" height="2256" preserveAspectRatio="xMidYMid" viewBox="-1 -0.6 257.9 230.8"><linearGradient id="a" x1="108.6%" x2="46.9%" y1="13.8%" y2="78.8%"><stop offset=".2" stop-color="#0052cc"/><stop offset="1" stop-color="#2684ff"/></linearGradient><g fill="none"><path d="M101 153h54l13-76H87z"/><path fill="#2684ff" d="M8 0a8 8 0 0 0-8 10l35 211a11 11 0 0 0 11 9h167a8 8 0 0 0 8-7l35-213a8 8 0 0 0-8-10zm147 153h-53L87 77h81z"/><path fill="url(#a)" d="M245 77h-77l-13 76h-53l-63 74 7 3h167a8 8 0 0 0 8-7z"/></g></svg>`,
 		displayName: "Bitbucket",
 		pkce:        false,
 		scopes:      []string{"account"},
-		authUrl:     "https://bitbucket.org/site/oauth2/authorize",
-		tokenUrl:    "https://bitbucket.org/site/oauth2/access_token",
-		userApiUrl:  "https://api.bitbucket.org/2.0/user",
+		authURL:     "https://bitbucket.org/site/oauth2/authorize",
+		tokenURL:    "https://bitbucket.org/site/oauth2/access_token",
+		userInfoURL: "https://api.bitbucket.org/2.0/user",
 	}}
 }
 
@@ -37,7 +43,7 @@ func NewBitbucketProvider() *Bitbucket {
 //
 // API reference: https://developer.atlassian.com/cloud/bitbucket/rest/api-group-users/#api-user-get
 func (p *Bitbucket) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
-	data, err := p.FetchRawUserData(token)
+	data, err := p.FetchRawUserInfo(token)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +82,7 @@ func (p *Bitbucket) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 		Name:         extracted.DisplayName,
 		Username:     extracted.Username,
 		Email:        email,
-		AvatarUrl:    extracted.Links.Avatar.Href,
+		AvatarURL:    extracted.Links.Avatar.Href,
 		RawUser:      rawUser,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -95,7 +101,7 @@ func (p *Bitbucket) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 //
 // API reference: https://developer.atlassian.com/cloud/bitbucket/rest/api-group-users/#api-user-emails-get
 func (p *Bitbucket) fetchPrimaryEmail(token *oauth2.Token) (string, error) {
-	response, err := p.Client(token).Get(p.userApiUrl + "/emails")
+	response, err := p.Client(token).Get(p.userInfoURL + "/emails")
 	if err != nil {
 		return "", err
 	}
@@ -114,8 +120,9 @@ func (p *Bitbucket) fetchPrimaryEmail(token *oauth2.Token) (string, error) {
 
 	expected := struct {
 		Values []struct {
-			Email     string `json:"email"`
-			IsPrimary bool   `json:"is_primary"`
+			Email       string `json:"email"`
+			IsPrimary   bool   `json:"is_primary"`
+			IsConfirmed bool   `json:"is_confirmed"`
 		} `json:"values"`
 	}{}
 	if err := json.Unmarshal(data, &expected); err != nil {
@@ -123,7 +130,7 @@ func (p *Bitbucket) fetchPrimaryEmail(token *oauth2.Token) (string, error) {
 	}
 
 	for _, v := range expected.Values {
-		if v.IsPrimary {
+		if v.IsPrimary && v.IsConfirmed {
 			return v.Email, nil
 		}
 	}

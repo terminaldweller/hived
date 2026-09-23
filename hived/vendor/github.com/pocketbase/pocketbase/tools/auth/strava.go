@@ -2,12 +2,16 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"strconv"
 
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/oauth2"
 )
+
+func init() {
+	Providers[NameStrava] = wrapFactory(NewStravaProvider)
+}
 
 var _ Provider = (*Strava)(nil)
 
@@ -16,21 +20,23 @@ const NameStrava string = "strava"
 
 // Strava allows authentication via Strava OAuth2.
 type Strava struct {
-	*baseProvider
+	BaseProvider
 }
 
 // NewStravaProvider creates new Strava provider instance with some defaults.
 func NewStravaProvider() *Strava {
-	return &Strava{&baseProvider{
+	return &Strava{BaseProvider{
 		ctx:         context.Background(),
+		order:       25,
+		logo:        `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" width="2500" height="2500"><path d="M0 0h16v16H0z" fill="#fc4c02"/><g fill="#fff" fill-rule="evenodd"><path d="M6.9 8.8l2.5 4.5 2.4-4.5h-1.5l-.9 1.7-1-1.7z" opacity=".6"/><path d="M7.2 2.5l3.1 6.3H4zm0 3.8l1.2 2.5H5.9z"/></g></svg>`,
 		displayName: "Strava",
 		pkce:        true,
 		scopes: []string{
 			"profile:read_all",
 		},
-		authUrl:    "https://www.strava.com/oauth/authorize",
-		tokenUrl:   "https://www.strava.com/api/v3/oauth/token",
-		userApiUrl: "https://www.strava.com/api/v3/athlete",
+		authURL:     "https://www.strava.com/oauth/authorize",
+		tokenURL:    "https://www.strava.com/api/v3/oauth/token",
+		userInfoURL: "https://www.strava.com/api/v3/athlete",
 	}}
 }
 
@@ -38,7 +44,7 @@ func NewStravaProvider() *Strava {
 //
 // API reference: https://developers.strava.com/docs/authentication/
 func (p *Strava) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
-	data, err := p.FetchRawUserData(token)
+	data, err := p.FetchRawUserInfo(token)
 	if err != nil {
 		return nil, err
 	}
@@ -49,11 +55,11 @@ func (p *Strava) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 	}
 
 	extracted := struct {
-		Id              int    `json:"id"`
+		Id              int64  `json:"id"`
 		FirstName       string `json:"firstname"`
 		LastName        string `json:"lastname"`
 		Username        string `json:"username"`
-		ProfileImageUrl string `json:"profile"`
+		ProfileImageURL string `json:"profile"`
 
 		// At the time of writing, Strava OAuth2 doesn't support returning the user email address
 		// Email string `json:"email"`
@@ -65,7 +71,7 @@ func (p *Strava) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 	user := &AuthUser{
 		Name:         extracted.FirstName + " " + extracted.LastName,
 		Username:     extracted.Username,
-		AvatarUrl:    extracted.ProfileImageUrl,
+		AvatarURL:    extracted.ProfileImageURL,
 		RawUser:      rawUser,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -74,7 +80,7 @@ func (p *Strava) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 	user.Expiry, _ = types.ParseDateTime(token.Expiry)
 
 	if extracted.Id != 0 {
-		user.Id = strconv.Itoa(extracted.Id)
+		user.Id = strconv.FormatInt(extracted.Id, 10)
 	}
 
 	return user, nil

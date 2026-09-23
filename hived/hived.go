@@ -20,13 +20,10 @@ import (
 	"github.com/Knetic/govaluate"
 	"github.com/go-redis/redis/v8"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/labstack/echo/v5"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/models/schema"
 	"github.com/pocketbase/pocketbase/plugins/ghupdate"
-	"github.com/pocketbase/pocketbase/plugins/jsvm"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -548,9 +545,9 @@ func GetPriceFromCoinCap(
 	errChan <- errorChanStruct{hasError: false, err: nil}
 }
 
-func (aw appWrapper) PriceHandler(echoCtx echo.Context) error {
-	writer := echoCtx.Response().Writer
-	request := echoCtx.Request()
+func (aw appWrapper) PriceHandler(e *core.RequestEvent) error {
+	writer := e.Response
+	request := e.Request
 	writer.Header().Add("Content-Type", "application/json")
 
 	if request.Method != http.MethodGet {
@@ -638,11 +635,11 @@ func (aw appWrapper) PriceHandler(echoCtx echo.Context) error {
 	return nil
 }
 
-func (aw appWrapper) PairHandler(echoCtx echo.Context) error {
+func (aw appWrapper) PairHandler(e *core.RequestEvent) error {
 	var err error
 
-	writer := echoCtx.Response().Writer
-	request := echoCtx.Request()
+	writer := e.Response
+	request := e.Request
 
 	writer.Header().Add("Content-Type", "application/json")
 
@@ -955,9 +952,9 @@ type tickerJSONType struct {
 	Name string `json:"name"`
 }
 
-func (aw appWrapper) tickerHandler(echoCtx echo.Context) error {
-	writer := echoCtx.Response().Writer
-	request := echoCtx.Request()
+func (aw appWrapper) tickerHandler(e *core.RequestEvent) error {
+	writer := e.Response
+	request := e.Request
 
 	addSecureHeaders(&writer)
 
@@ -981,9 +978,9 @@ func (aw appWrapper) tickerHandler(echoCtx echo.Context) error {
 	return nil
 }
 
-func (aw appWrapper) healthHandler(echoCtx echo.Context) error {
-	writer := echoCtx.Response().Writer
-	request := echoCtx.Request()
+func (aw appWrapper) healthHandler(e *core.RequestEvent) error {
+	writer := e.Response
+	request := e.Request
 	var RedisError string
 
 	var HivedError string
@@ -1043,22 +1040,22 @@ func setupLogging() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 }
 
-func (aw appWrapper) postHandler(context echo.Context) error {
-	user, pass, ok := context.Request().BasicAuth()
+func (aw appWrapper) postHandler(e *core.RequestEvent) error {
+	user, pass, ok := e.Request.BasicAuth()
 	if !ok {
-		return context.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
+		return e.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
 	}
 
-	userRecord, err := aw.app.Dao().FindAuthRecordByUsername("users", user)
+	userRecord, err := aw.app.FindFirstRecordByData("users", "username", user)
 	if err != nil {
-		return context.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
+		return e.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
 	}
 
 	if !userRecord.ValidatePassword(pass) {
-		return context.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
+		return e.JSON(http.StatusUnauthorized, "unauthorized") //nolint: wrapcheck
 	}
 
-	return context.JSON(http.StatusOK, "OK") //nolint: wrapcheck
+	return e.JSON(http.StatusOK, "OK") //nolint: wrapcheck
 }
 
 func defaultPublicDir() string {
@@ -1069,53 +1066,86 @@ func defaultPublicDir() string {
 	return filepath.Join(os.Args[0], "../pb_public")
 }
 
-func (aw appWrapper) apikeyAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		apikey := c.Request().Header["X-Apikey"][0]
-		user := c.Request().Header["X-User"][0]
+// func (aw appWrapper) apikeyAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+// 	return func(c echo.Context) error {
+// 		apikey := c.Request().Header["X-Apikey"][0]
+// 		user := c.Request().Header["X-User"][0]
 
-		userRecord, err := aw.app.Dao().FindAuthRecordByUsername("users", user)
-		if err != nil {
-			return apis.NewBadRequestError("unauthorized", nil)
-		}
+// 		userRecord, err := aw.app.FindFirstRecordByData("users", "username", user)
+// 		if err != nil {
+// 			return apis.NewBadRequestError("unauthorized", nil)
+// 		}
 
-		hashedAPIKey := userRecord.Get("apikey")
+// 		hashedAPIKey := userRecord.Get("apikey")
 
-		hashedAPIKeyStr, ok := hashedAPIKey.(string)
-		if !ok {
-			return apis.NewBadRequestError("unauthorized", nil)
-		}
+// 		hashedAPIKeyStr, ok := hashedAPIKey.(string)
+// 		if !ok {
+// 			return apis.NewBadRequestError("unauthorized", nil)
+// 		}
 
-		err = bcrypt.CompareHashAndPassword([]byte(hashedAPIKeyStr), []byte(apikey))
-		if err != nil {
-			log.Print("apikey auth failed for user: " + user)
-			return apis.NewBadRequestError("unauthorized", nil)
-		}
+// 		err = bcrypt.CompareHashAndPassword([]byte(hashedAPIKeyStr), []byte(apikey))
+// 		if err != nil {
+// 			log.Print("apikey auth failed for user: " + user)
+// 			return apis.NewBadRequestError("unauthorized", nil)
+// 		}
 
-		return next(c)
+// 		return next(c)
+// 	}
+// }
+
+func (aw appWrapper) apikeyAuthMiddleware(e *core.RequestEvent) error {
+	apikey := e.Request.Header.Get("X-Apikey")
+	user := e.Request.Header.Get("X-User")
+
+	if apikey == "" || user == "" {
+		return e.UnauthorizedError("unauthorized", nil)
 	}
+
+	userRecord, err := aw.app.FindFirstRecordByData(
+		"users",
+		"username",
+		user,
+	)
+	if err != nil {
+		return e.UnauthorizedError("unauthorized", nil)
+	}
+
+	hashedAPIKey := userRecord.GetString("apikey")
+	if hashedAPIKey == "" {
+		return e.UnauthorizedError("unauthorized", nil)
+	}
+
+	if err := bcrypt.CompareHashAndPassword(
+		[]byte(hashedAPIKey),
+		[]byte(apikey),
+	); err != nil {
+		log.Printf("apikey auth failed for user %q", user)
+		return e.UnauthorizedError("unauthorized", nil)
+	}
+
+	return e.Next()
 }
 
-func (aw appWrapper) authMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		user, pass, ok := c.Request().BasicAuth()
-		if !ok {
-			return apis.NewBadRequestError("unauthorized", nil)
-		}
+// func (aw appWrapper) authMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+// 	return func(c echo.Context) error {
+// 		user, pass, ok := c.Request().BasicAuth()
+// 		if !ok {
+// 			return apis.NewBadRequestError("unauthorized", nil)
+// 		}
 
-		userRecord, err := aw.app.Dao().FindAuthRecordByUsername("users", user)
-		if err != nil {
-			log.Print(err)
-			return apis.NewBadRequestError("unauthorized", nil)
-		}
+// 		userRecord, err := aw.app.FindFirstRecordByData("users", "username", user)
+// 		if err != nil {
+// 			log.Print(err)
+// 			return apis.NewBadRequestError("unauthorized", nil)
+// 		}
 
-		if !userRecord.ValidatePassword(pass) {
-			return apis.NewBadRequestError("unauthorized", nil)
-		}
+// 		if !userRecord.ValidatePassword(pass) {
+// 			return apis.NewBadRequestError("unauthorized", nil)
+// 		}
 
-		return next(c)
-	}
-}
+// 		return next(c)
+// 	}
+// }
 
 func setRootCmds(app *pocketbase.PocketBase) RootCmds {
 	var rootCmds RootCmds
@@ -1169,13 +1199,6 @@ func setRootCmds(app *pocketbase.PocketBase) RootCmds {
 		"fallback the request to index.html on missing static path (eg. when pretty urls are used with SPA)",
 	)
 
-	app.RootCmd.PersistentFlags().IntVar(
-		&rootCmds.queryTimeout,
-		"queryTimeout",
-		30,
-		"the default SELECT queries timeout in seconds",
-	)
-
 	return rootCmds
 }
 
@@ -1184,62 +1207,60 @@ func startPocketbaseApp() {
 
 	aw := appWrapper{app: app}
 
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.POST("/", aw.postHandler, aw.apikeyAuthMiddleware)
-		e.Router.GET("/health", aw.healthHandler, aw.apikeyAuthMiddleware)
-		e.Router.GET("/api/crypto/v1/price", aw.PriceHandler, aw.apikeyAuthMiddleware)
-		e.Router.GET("/api/crypto/v1/pair", aw.PairHandler, aw.apikeyAuthMiddleware)
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		e.Router.POST("/", aw.postHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.GET("/health", aw.healthHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.GET("/api/crypto/v1/price", aw.PriceHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.GET("/api/crypto/v1/pair", aw.PairHandler).BindFunc(aw.apikeyAuthMiddleware)
 
-		e.Router.GET("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
-		e.Router.PUT("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
-		e.Router.POST("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
-		e.Router.PATCH("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
-		e.Router.DELETE("/api/crypto/v1/alert", aw.alertHandler, aw.apikeyAuthMiddleware)
+		e.Router.GET("/api/crypto/v1/alert", aw.alertHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.PUT("/api/crypto/v1/alert", aw.alertHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.POST("/api/crypto/v1/alert", aw.alertHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.PATCH("/api/crypto/v1/alert", aw.alertHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.DELETE("/api/crypto/v1/alert", aw.alertHandler).BindFunc(aw.apikeyAuthMiddleware)
 
-		e.Router.GET("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
-		e.Router.PUT("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
-		e.Router.POST("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
-		e.Router.PATCH("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
-		e.Router.DELETE("/api/crypto/v1/ticker", aw.tickerHandler, aw.apikeyAuthMiddleware)
+		e.Router.GET("/api/crypto/v1/ticker", aw.tickerHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.PUT("/api/crypto/v1/ticker", aw.tickerHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.POST("/api/crypto/v1/ticker", aw.tickerHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.PATCH("/api/crypto/v1/ticker", aw.tickerHandler).BindFunc(aw.apikeyAuthMiddleware)
+		e.Router.DELETE("/api/crypto/v1/ticker", aw.tickerHandler).BindFunc(aw.apikeyAuthMiddleware)
 
-		return nil
+		return e.Next()
 	})
 
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		dao := app.Dao()
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 
-		collection, err := dao.FindCollectionByNameOrId("users")
+		collection, err := app.FindCollectionByNameOrId("users")
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to find users collection")
 		}
 
-		if field := collection.Schema.GetFieldByName("apikey"); field == nil {
-			newField := &schema.SchemaField{
+		if field := collection.Fields.GetByName("apikey"); field == nil {
+
+			newField := &core.TextField{
 				Name:     "apikey",
-				Type:     schema.FieldTypeText,
-				System:   false,
 				Required: false,
-				Unique:   true,
+				System:   false,
 			}
 
-			collection.Schema.AddField(newField)
+			collection.Fields.Add(newField)
 
-			if err := dao.SaveCollection(collection); err != nil {
+			if err := app.Save(collection); err != nil {
 				log.Fatal().Err(err).Msg("failed to save users collection with apikey field")
 			}
 		}
 
-		return nil
+		return e.Next()
 	})
 
-	app.OnRecordBeforeCreateRequest("users").Add(func(e *core.RecordCreateEvent) error {
+	app.OnRecordCreateRequest("users").BindFunc(func(e *core.RecordRequestEvent) error {
 		apikeyHash, err := GenAPIKey()
 		if err != nil {
 			return err
 		}
 
 		e.Record.Set("apikey", apikeyHash)
-		return nil
+		return e.Next()
 	})
 
 	rootCmds := setRootCmds(app)
@@ -1249,12 +1270,12 @@ func startPocketbaseApp() {
 		log.Fatal().Err(err)
 	}
 
-	jsvm.MustRegister(app, jsvm.Config{
-		MigrationsDir: rootCmds.migrationsDir,
-		HooksDir:      rootCmds.hooksDir,
-		HooksWatch:    rootCmds.hooksWatch,
-		HooksPoolSize: rootCmds.hooksPoolSize,
-	})
+	// jsvm.MustRegister(app, jsvm.Config{
+	// 	MigrationsDir: rootCmds.migrationsDir,
+	// 	HooksDir:      rootCmds.hooksDir,
+	// 	HooksWatch:    rootCmds.hooksWatch,
+	// 	HooksPoolSize: rootCmds.hooksPoolSize,
+	// })
 
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
 		TemplateLang: migratecmd.TemplateLangJS,
@@ -1264,21 +1285,22 @@ func startPocketbaseApp() {
 
 	ghupdate.MustRegister(app, app.RootCmd, ghupdate.Config{})
 
-	app.OnAfterBootstrap().PreAdd(func(_ *core.BootstrapEvent) error {
-		app.Dao().ModelQueryTimeout = time.Duration(rootCmds.queryTimeout) * time.Second
+	// app.OnBootstrap().BindFunc(func(_ *core.BootstrapEvent) error {
+	// 	app.Dao().ModelQueryTimeout = time.Duration(rootCmds.queryTimeout) * time.Second
 
-		return nil
-	})
+	// 	return nil
+	// })
 
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.GET("/*", apis.StaticDirectoryHandler(os.DirFS(rootCmds.publicDir), rootCmds.indexFallback))
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		e.Router.GET("/*", apis.Static(os.DirFS(rootCmds.publicDir), rootCmds.indexFallback))
 
-		return nil
+		return e.Next()
 	})
 
 	if err := app.Start(); err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().Err(err).Msg("PocketBase fialed to start")
 	}
+	log.Warn().Msg("PocketBase returned without an error")
 }
 
 func main() {

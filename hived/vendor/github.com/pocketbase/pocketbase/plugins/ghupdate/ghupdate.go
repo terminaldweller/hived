@@ -8,7 +8,7 @@ package ghupdate
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -20,10 +20,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/archive"
+	"github.com/pocketbase/pocketbase/tools/osutils"
 	"github.com/spf13/cobra"
 )
 
@@ -45,6 +45,12 @@ type Config struct {
 	// ArchiveExecutable specifies the name of the executable file in the release archive
 	// (default to "pocketbase"; an additional ".exe" check is also performed as a fallback).
 	ArchiveExecutable string
+
+	// BaseURL is the base URL of the GitHub API (or similar compatible)
+	// used to fetch the latest releases information.
+	//
+	// Defaults to "https://api.github.com".
+	BaseURL string
 
 	// Optional context to use when fetching and downloading the latest release.
 	Context context.Context
@@ -80,6 +86,12 @@ func Register(app core.App, rootCmd *cobra.Command, config Config) error {
 
 	if p.config.ArchiveExecutable == "" {
 		p.config.ArchiveExecutable = "pocketbase"
+	}
+
+	if p.config.BaseURL == "" {
+		p.config.BaseURL = "https://api.github.com"
+	} else {
+		p.config.BaseURL = strings.TrimRight(p.config.BaseURL, "/")
 	}
 
 	if p.config.HttpClient == nil {
@@ -121,11 +133,7 @@ func (p *plugin) updateCmd() *cobra.Command {
 			}
 
 			if needConfirm {
-				confirm := false
-				prompt := &survey.Confirm{
-					Message: "Do you want to proceed with the update?",
-				}
-				survey.AskOne(prompt, &confirm)
+				confirm := osutils.YesNoPrompt("Do you want to proceed with the update?", false)
 				if !confirm {
 					fmt.Println("The command has been cancelled.")
 					return nil
@@ -149,12 +157,9 @@ func (p *plugin) updateCmd() *cobra.Command {
 func (p *plugin) update(withBackup bool) error {
 	color.Yellow("Fetching release information...")
 
-	latest, err := fetchLatestRelease(
-		p.config.Context,
-		p.config.HttpClient,
-		p.config.Owner,
-		p.config.Repo,
-	)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", p.config.BaseURL, p.config.Owner, p.config.Repo)
+
+	latest, err := fetchLatestRelease(p.config.Context, p.config.HttpClient, url)
 	if err != nil {
 		return err
 	}
@@ -208,13 +213,13 @@ func (p *plugin) update(withBackup bool) error {
 		// try again with an .exe extension
 		newExec = newExec + ".exe"
 		if _, fallbackErr := os.Stat(newExec); fallbackErr != nil {
-			return fmt.Errorf("The executable in the extracted path is missing or it is inaccessible: %v, %v", err, fallbackErr)
+			return fmt.Errorf("the executable in the extracted path is missing or it is inaccessible: %v, %v", err, fallbackErr)
 		}
 	}
 
 	// rename the current executable
 	if err := os.Rename(oldExec, renamedOldExec); err != nil {
-		return fmt.Errorf("Failed to rename the current executable: %w", err)
+		return fmt.Errorf("failed to rename the current executable: %w", err)
 	}
 
 	tryToRevertExecChanges := func() {
@@ -231,7 +236,7 @@ func (p *plugin) update(withBackup bool) error {
 	// replace with the extracted binary
 	if err := os.Rename(newExec, oldExec); err != nil {
 		tryToRevertExecChanges()
-		return fmt.Errorf("Failed replacing the executable: %w", err)
+		return fmt.Errorf("failed replacing the executable: %w", err)
 	}
 
 	if withBackup {
@@ -252,6 +257,7 @@ func (p *plugin) update(withBackup bool) error {
 		fmt.Print("\n")
 		color.Cyan("Here is a list with some of the %s changes:", latest.Tag)
 		// remove the update command note to avoid "stuttering"
+		// (@todo consider moving to a config option)
 		releaseNotes := strings.TrimSpace(strings.Replace(latest.Body, "> _To update the prebuilt executable you can run `./"+p.config.ArchiveExecutable+" update`._", "", 1))
 		color.Cyan(releaseNotes)
 		fmt.Print("\n")
@@ -263,11 +269,8 @@ func (p *plugin) update(withBackup bool) error {
 func fetchLatestRelease(
 	ctx context.Context,
 	client HttpClient,
-	owner string,
-	repo string,
+	url string,
 ) (*release, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
-
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err

@@ -1,6 +1,9 @@
 services:
   nginx:
-    image: nginx:stable
+    image: waf
+    build:
+      context: .
+      dockerfile: Dockerfile_waf
     deploy:
       resources:
         limits:
@@ -8,12 +11,22 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
+        max-size: "30m"
+        max-file: "5"
     ports:
-      - "8007:443"
+      - "8007:443/tcp"
     networks:
-      - apinet
+      apinet:
+        ipv4_address: 172.31.89.10
     restart: unless-stopped
+    environment:
+      - MODSECURITY_RULE_ENGINE=On
+      - BLOCKING_PARANOIA=1
+      - DETECTION_PARANOIA=1
+      - ALLOWED_REQUEST_CONTENT_TYPE_CHARSET=|utf-8|
+      - VALIDATE_UTF8_ENCODING=1
+      - ALLOWED_METHODS=GET POST
+      - ALLOWED_HTTP_VERSIONS=HTTP/2.0
     cap_drop:
       - ALL
     cap_add:
@@ -23,13 +36,16 @@ services:
       - SETUID
       - NET_BIND_SERVICE
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:/etc/letsencrypt/live/api.terminaldweller.com/fullchain.pem:ro
-      - /etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:/etc/letsencrypt/live/api.terminaldweller.com/privkey.pem:ro
+      - ./nginx.conf:/etc/nginx/conf.d/waf.conf:ro
     depends_on:
       - hived
+    security_opt:
+      - no-new-privileges
+    runtime: runsc
   hived:
-    image: terminaldweller/hived:main
+    image: hived
+    build:
+      context: ./hived
     deploy:
       resources:
         limits:
@@ -37,32 +53,36 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-    secrets:
-      - tg_bot_token
+        max-size: "30m"
+        max-file: "5"
     restart: unless-stopped
     networks:
-      - apinet
-      - dbnet
+      apinet:
+        ipv4_address: 172.31.89.11
+      dbnet:
+        ipv4_address: 172.31.88.11
     ports:
-      - "127.0.0.1:10009:8090"
+      - "127.0.0.1:10009:8090/tcp"
     entrypoint: ["/hived/hived"]
     command: ["serve", "--http=0.0.0.0:8090"]
     depends_on:
-      - keydb
+      - redis
     cap_drop:
       - ALL
     environment:
-      - SERVER_DEPLOYMENT_TYPE=test
-      - HIVED_PRICE_SOURCE=cryptocompare
+      - HIVED_PRICE_SOURCE=cmc
       - CMC_API_KEY=
-      - POLYGON_API_KEY=
-      - CRYPTOCOMPARE_API_KEY=
       - TELEGRAM_BOT_TOKEN=
+    read_only: true
     volumes:
-      - ./hived/hived.toml:/hived/hived.toml
-  keydb:
-    image: eqalpha/keydb:alpine_x86_64_v6.3.4
+      - ./hived/hived.toml:/hived/hived.toml:ro
+      - ./resolv.conf:/etc/resolv.conf:ro
+      - pb-data:/hived/pb_data:rw
+    security_opt:
+      - no-new-privileges
+    runtime: runsc
+  redis:
+    image: redis:8.8-alpine
     deploy:
       resources:
         limits:
@@ -70,24 +90,36 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
+        max-size: "30m"
+        max-file: "5"
     networks:
-      - dbnet
+      dbnet:
+        ipv4_address: 172.31.88.10
     ports:
-      - "127.0.0.1:6380:6379"
+      - "127.0.0.1:6380:6379/tcp"
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     volumes:
-      - keydb-data:/data/
+      - redis-data:/data/:rw
+    security_opt:
+      - no-new-privileges
+    runtime: runsc
+    read_only: true
+    cap_drop:
+      - ALL
 networks:
   dbnet:
+    enable_ipv6: false
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.88.0/24
   apinet:
-secrets:
-  tg_bot_token:
-    file: ./tgtoken
-  polygon_api_key:
-    file: ./polygon_api_key
-  cmc_api_key:
-    file: ./cmc_api_key
+    enable_ipv6: true
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.89.0/24
 volumes:
-  keydb-data:
+  redis-data:
+  pb-data:

@@ -2,7 +2,7 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 
@@ -11,6 +11,10 @@ import (
 	"golang.org/x/oauth2/twitch"
 )
 
+func init() {
+	Providers[NameTwitch] = wrapFactory(NewTwitchProvider)
+}
+
 var _ Provider = (*Twitch)(nil)
 
 // NameTwitch is the unique name of the Twitch provider.
@@ -18,19 +22,21 @@ const NameTwitch string = "twitch"
 
 // Twitch allows authentication via Twitch OAuth2.
 type Twitch struct {
-	*baseProvider
+	BaseProvider
 }
 
 // NewTwitchProvider creates new Twitch provider instance with some defaults.
 func NewTwitchProvider() *Twitch {
-	return &Twitch{&baseProvider{
+	return &Twitch{BaseProvider{
 		ctx:         context.Background(),
+		order:       23,
+		logo:        `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="268" preserveAspectRatio="xMidYMid"><path fill="#5a3e85" d="M17 0 0 47v186h64v35h35l35-35h52l70-70V0zm24 23h192v128l-41 41h-64l-35 35v-35H41zm64 117h23V70h-23zm64 0h23V70h-23z"/></svg>`,
 		displayName: "Twitch",
 		pkce:        true,
 		scopes:      []string{"user:read:email"},
-		authUrl:     twitch.Endpoint.AuthURL,
-		tokenUrl:    twitch.Endpoint.TokenURL,
-		userApiUrl:  "https://api.twitch.tv/helix/users",
+		authURL:     twitch.Endpoint.AuthURL,
+		tokenURL:    twitch.Endpoint.TokenURL,
+		userInfoURL: "https://api.twitch.tv/helix/users",
 	}}
 }
 
@@ -38,7 +44,7 @@ func NewTwitchProvider() *Twitch {
 //
 // API reference: https://dev.twitch.tv/docs/api/reference#get-users
 func (p *Twitch) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
-	data, err := p.FetchRawUserData(token)
+	data, err := p.FetchRawUserInfo(token)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +60,7 @@ func (p *Twitch) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 			Login           string `json:"login"`
 			DisplayName     string `json:"display_name"`
 			Email           string `json:"email"`
-			ProfileImageUrl string `json:"profile_image_url"`
+			ProfileImageURL string `json:"profile_image_url"`
 		} `json:"data"`
 	}{}
 	if err := json.Unmarshal(data, &extracted); err != nil {
@@ -62,7 +68,7 @@ func (p *Twitch) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 	}
 
 	if len(extracted.Data) == 0 {
-		return nil, errors.New("Failed to fetch AuthUser data")
+		return nil, errors.New("failed to fetch AuthUser data")
 	}
 
 	user := &AuthUser{
@@ -70,7 +76,7 @@ func (p *Twitch) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 		Name:         extracted.Data[0].DisplayName,
 		Username:     extracted.Data[0].Login,
 		Email:        extracted.Data[0].Email,
-		AvatarUrl:    extracted.Data[0].ProfileImageUrl,
+		AvatarURL:    extracted.Data[0].ProfileImageURL,
 		RawUser:      rawUser,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -81,16 +87,16 @@ func (p *Twitch) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 	return user, nil
 }
 
-// FetchRawUserData implements Provider.FetchRawUserData interface.
+// FetchRawUserInfo implements Provider.FetchRawUserInfo interface method.
 //
-// This differ from baseProvider because Twitch requires the `Client-Id` header.
-func (p *Twitch) FetchRawUserData(token *oauth2.Token) ([]byte, error) {
-	req, err := http.NewRequest("GET", p.userApiUrl, nil)
+// This differ from BaseProvider because Twitch requires the Client-Id header.
+func (p *Twitch) FetchRawUserInfo(token *oauth2.Token) ([]byte, error) {
+	req, err := http.NewRequestWithContext(p.ctx, "GET", p.userInfoURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("Client-Id", p.clientId)
 
-	return p.sendRawUserDataRequest(req, token)
+	return p.sendRawUserInfoRequest(req, token)
 }

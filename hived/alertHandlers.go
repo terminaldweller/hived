@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/labstack/echo/v5"
+	"github.com/pocketbase/pocketbase/core"
 	"github.com/rs/zerolog/log"
 )
 
@@ -170,9 +170,9 @@ func (alertHandler Handler) HandleAlertGet(writer http.ResponseWriter, request *
 	}
 }
 
-func (aw appWrapper) alertHandler(echoCtx echo.Context) error {
-	writer := echoCtx.Response().Writer
-	request := echoCtx.Request()
+func (aw appWrapper) alertHandler(e *core.RequestEvent) error {
+	writer := e.Response
+	request := e.Request
 
 	addSecureHeaders(&writer)
 

@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	indexRegex       = regexp.MustCompile(`(?im)create\s+(unique\s+)?\s*index\s*(if\s+not\s+exists\s+)?(\S*)\s+on\s+(\S*)\s*\(([\s\S]*)\)(?:\s*where\s+([\s\S]*))?`)
-	indexColumnRegex = regexp.MustCompile(`(?im)^([\s\S]+?)(?:\s+collate\s+([\w]+))?(?:\s+(asc|desc))?$`)
+	indexRegex       = regexp.MustCompile(`(?i)\s*create\s+(unique\s+)?\s*index\s*(if\s+not\s+exists\s+)?(\S*)\s+on\s+(\S*)\s*\(([\s\S]*?)\)(?:\s+where\s+([\s\S]*?))?\s*$`)
+	indexColumnRegex = regexp.MustCompile(`(?i)^([\s\S]+?)(?:\s+collate\s+([\w]+))?(?:\s+(asc|desc))?\s*$`)
 )
 
 // IndexColumn represents a single parsed SQL index column.
@@ -21,13 +21,13 @@ type IndexColumn struct {
 
 // Index represents a single parsed SQL CREATE INDEX expression.
 type Index struct {
-	Unique     bool          `json:"unique"`
-	Optional   bool          `json:"optional"`
 	SchemaName string        `json:"schemaName"`
 	IndexName  string        `json:"indexName"`
 	TableName  string        `json:"tableName"`
-	Columns    []IndexColumn `json:"columns"`
 	Where      string        `json:"where"`
+	Columns    []IndexColumn `json:"columns"`
+	Unique     bool          `json:"unique"`
+	Optional   bool          `json:"optional"`
 }
 
 // IsValid checks if the current Index contains the minimum required fields to be considered valid.
@@ -148,11 +148,12 @@ func ParseIndex(createIndexExpr string) Index {
 	nameTk.Separators('.')
 
 	nameParts, _ := nameTk.ScanAll()
-	if len(nameParts) == 2 {
+	switch len(nameParts) {
+	case 1:
+		result.IndexName = strings.Trim(nameParts[0], trimChars)
+	case 2:
 		result.SchemaName = strings.Trim(nameParts[0], trimChars)
 		result.IndexName = strings.Trim(nameParts[1], trimChars)
-	} else {
-		result.IndexName = strings.Trim(nameParts[0], trimChars)
 	}
 
 	// TableName
@@ -186,6 +187,11 @@ func ParseIndex(createIndexExpr string) Index {
 		})
 	}
 
+	if len(rawColumns) != len(result.Columns) {
+		// unset to trigger validation error
+		result.Columns = []IndexColumn{}
+	}
+
 	// WHERE expression
 	// ---
 	result.Where = strings.TrimSpace(matches[6])
@@ -193,15 +199,25 @@ func ParseIndex(createIndexExpr string) Index {
 	return result
 }
 
-// HasColumnUniqueIndex loosely checks whether the specified column has
-// a single column unique index (WHERE statements are ignored).
-func HasSingleColumnUniqueIndex(column string, indexes []string) bool {
+// FindSingleColumnUniqueIndex returns the first matching single column unique index.
+func FindSingleColumnUniqueIndex(indexes []string, column string) (Index, bool) {
+	var index Index
+
 	for _, idx := range indexes {
-		parsed := ParseIndex(idx)
-		if parsed.Unique && len(parsed.Columns) == 1 && strings.EqualFold(parsed.Columns[0].Name, column) {
-			return true
+		index := ParseIndex(idx)
+		if index.Unique && len(index.Columns) == 1 && strings.EqualFold(index.Columns[0].Name, column) {
+			return index, true
 		}
 	}
 
-	return false
+	return index, false
+}
+
+// Deprecated: Use `_, ok := FindSingleColumnUniqueIndex(indexes, column)` instead.
+//
+// HasColumnUniqueIndex loosely checks whether the specified column has
+// a single column unique index (WHERE statements are ignored).
+func HasSingleColumnUniqueIndex(column string, indexes []string) bool {
+	_, ok := FindSingleColumnUniqueIndex(indexes, column)
+	return ok
 }

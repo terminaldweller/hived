@@ -1,14 +1,15 @@
-// Package ui handles the PocketBase Admin frontend embedding.
+//go:build !no_ui
+
+// Package ui handles the PocketBase Superuser frontend embedding.
 package ui
 
 import (
 	"embed"
-
-	"github.com/labstack/echo/v5"
+	"io/fs"
 )
 
 //go:embed all:dist
 var distDir embed.FS
 
 // DistDirFS contains the embedded dist directory files (without the "dist" prefix)
-var DistDirFS = echo.MustSubFS(distDir, "dist")
+var DistDirFS, _ = fs.Sub(distDir, "dist")

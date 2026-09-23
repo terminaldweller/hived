@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // ParseUnverifiedJWT parses JWT and returns its claims
@@ -18,7 +18,7 @@ func ParseUnverifiedJWT(token string) (jwt.MapClaims, error) {
 	_, _, err := parser.ParseUnverified(token, claims)
 
 	if err == nil {
-		err = claims.Valid()
+		err = jwt.NewValidator(jwt.WithIssuedAt()).Validate(claims)
 	}
 
 	return claims, err
@@ -39,15 +39,15 @@ func ParseJWT(token string, verificationKey string) (jwt.MapClaims, error) {
 		return claims, nil
 	}
 
-	return nil, errors.New("Unable to parse token.")
+	return nil, errors.New("unable to parse token")
 }
 
 // NewJWT generates and returns new HS256 signed JWT.
-func NewJWT(payload jwt.MapClaims, signingKey string, secondsDuration int64) (string, error) {
-	seconds := time.Duration(secondsDuration) * time.Second
-
+func NewJWT(payload jwt.MapClaims, signingKey string, duration time.Duration) (string, error) {
 	claims := jwt.MapClaims{
-		"exp": time.Now().Add(seconds).Unix(),
+		// @todo consider with the refactoring to either remove the
+		// duration argument or make it always take precedence?
+		"exp": time.Now().Add(duration).Unix(),
 	}
 
 	for k, v := range payload {
@@ -55,12 +55,4 @@ func NewJWT(payload jwt.MapClaims, signingKey string, secondsDuration int64) (st
 	}
 
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(signingKey))
-}
-
-// Deprecated:
-// Consider replacing with NewJWT().
-//
-// NewToken is a legacy alias for NewJWT that generates a HS256 signed JWT.
-func NewToken(payload jwt.MapClaims, signingKey string, secondsDuration int64) (string, error) {
-	return NewJWT(payload, signingKey, secondsDuration)
 }
