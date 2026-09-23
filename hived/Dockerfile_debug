@@ -4,7 +4,7 @@ COPY *.go /hived/
 COPY ./vendor/ /hived/vendor/
 RUN cd /hived && CGO_ENABLED=0 go build -mod=vendor
 
-FROM gcr.io/distroless/static-debian13:nonroot
+FROM alpine:3.24
 COPY --from=builder /hived/hived /hived/
-USER 65532:65532
+USER 0:0
 ENTRYPOINT ["/hived/hived"]

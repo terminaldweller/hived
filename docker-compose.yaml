@@ -56,6 +56,7 @@ services:
         max-size: "30m"
         max-file: "5"
     restart: unless-stopped
+    user: "65532:65532"
     networks:
       apinet:
         ipv4_address: 172.31.89.11
